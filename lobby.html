@@ -8,18 +8,67 @@
 </head>
 <body>
     <div class="container">
-        <div class="list-group">
-            <h3>Lobby</h3>
-            <ul id="lobbyList"></ul>
+        <!-- Titre -->
+        <h1>KataNaze - Lobby</h1>
+        
+        <!-- Zone de jeu principale -->
+        <div class="game-area">
+            <!-- Positions des joueurs -->
+            <div class="player-position top-left" data-position="1">
+                <div class="plus-icon">+</div>
+                <span class="position-text">Position 1</span>
+            </div>
+            
+            <div class="player-position top-right" data-position="2">
+                <div class="plus-icon">+</div>
+                <span class="position-text">Position 2</span>
+            </div>
+            
+            <div class="player-position middle-left" data-position="3">
+                <div class="plus-icon">+</div>
+                <span class="position-text">Position 3</span>
+            </div>
+            
+            <div class="player-position center" data-position="4">
+                <div class="plus-icon" id="centerPlus">+</div>
+                <span class="position-text" id="centerText">Position 4</span>
+                <span class="player-name" id="playerName" style="display: none;"></span>
+            </div>
+            
+            <div class="player-position middle-right" data-position="5">
+                <div class="plus-icon">+</div>
+                <span class="position-text">Position 5</span>
+            </div>
+            
+            <div class="player-position bottom-left" data-position="6">
+                <div class="plus-icon">+</div>
+                <span class="position-text">Position 6</span>
+            </div>
+            
+            <div class="player-position bottom-right" data-position="7">
+                <div class="plus-icon">+</div>
+                <span class="position-text">Position 7</span>
+            </div>
         </div>
-        <div class="list-group">
-            <h3>Table</h3>
-            <ul id="tableList"></ul>
+
+        <button class="join-btn" id="joinBtn" onclick="toggleJoinLeave()">
+            JOIN
+        </button>
+        
+        <!-- Liste des utilisateurs connectés (bas gauche) -->
+        <div class="users-list">
+            <h3>Utilisateurs Connectés</h3>
+            <ul id="connectedUsersList">
+                <!-- Les utilisateurs seront ajoutés dynamiquement -->
+            </ul>
         </div>
-        <div class="list-group">
-            <h3>Spectateur</h3>
-            <ul id="spectatorList"></ul>
-        </div>
+        
+        <button class="start-btn" id="startBtn" onclick="startGame()" style="display: none;">
+            START GAME
+        </button>
+
+        <!-- Bouton de déconnexion -->
+        <button class="logout-btn" onclick="logout()">Se déconnecter</button>
     </div>
 
     <script src="js/lobby.js"></script>

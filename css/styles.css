@@ -1,3 +1,9 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
 body {
     font-family: Arial, sans-serif;
     margin: 0;
@@ -6,10 +12,319 @@ body {
     justify-content: center;
     align-items: center;
     height: 100vh;
-    background-color: #f0f0f0;
+    /* background-color: #f0f0f0; */
+    background: linear-gradient(135deg, #2c3e50, #34495e);
+    color: white;
+    min-height: 100vh;
+    overflow: hidden;
 }
 
 .container {
+    width: 100vw;
+    height: 100vh;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+h1 {
+    text-align: center;
+    padding: 20px;
+    background: rgba(0, 0, 0, 0.3);
+    margin-bottom: 20px;
+    font-size: 2em;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.game-area {
+    flex: 1;
+    position: relative;
+    background: #bdc3c7;
+    margin: 0 20px;
+    border-radius: 10px;
+    border: 3px solid #34495e;
+}
+
+.player-position {
+    position: absolute;
+    width: 140px;
+    height: 140px;
+    border: 3px solid #2c3e50;
+    border-radius: 50%;
+    background: white;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: not-allowed;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.player-position.active {
+    cursor: pointer;
+    border-color: #e74c3c;
+    background: #ecf0f1;
+}
+
+/* .player-position.active:hover {
+    transform: scale(1.1);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.4);
+} */
+
+.player-position.joined {
+    background: #2ecc71;
+    border-color: #27ae60;
+    cursor: default;
+}
+
+.plus-icon {
+    font-size: 36px;
+    font-weight: bold;
+    color: #2c3e50;
+    line-height: 1;
+}
+
+.position-text {
+    font-size: 16px;
+    color: #2c3e50;
+    font-weight: bold;
+    margin-top: 2px;
+}
+
+.player-name {
+    font-size: 16px;
+    color: white;
+    font-weight: bold;
+    text-align: center;
+    max-width: 70px;
+    /* word-wrap: break-word; */
+}
+
+/* Positions spécifiques */
+.top-left {
+    top: 15%;
+    left: 15%;
+    transform: translate(-50%, -50%);
+}
+
+.top-right {
+    top: 15%;
+    right: 15%;
+    transform: translate(50%, -50%);
+}
+
+.middle-left {
+    top: 50%;
+    left: 8%;
+    transform: translate(-50%, -50%);
+}
+
+.middle-right {
+    top: 50%;
+    right: 8%;
+    transform: translate(50%, -50%);
+}
+
+.bottom-left {
+    bottom: 15%;
+    left: 15%;
+    transform: translate(-50%, 50%);
+}
+
+.bottom-right {
+    bottom: 15%;
+    right: 15%;
+    transform: translate(50%, 50%);
+}
+
+.center {
+    top: 65%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+/* Liste des utilisateurs connectés */
+.users-list {
+    position: absolute;
+    top: 15%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.8);
+    padding: 15px;
+    border-radius: 10px;
+    min-width: 200px;
+    max-width: 300px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.users-list h3 {
+    margin-bottom: 10px;
+    font-size: 1.1em;
+    border-bottom: 1px solid #34495e;
+    padding-bottom: 5px;
+}
+
+.users-list ul {
+    list-style: none;
+}
+
+.users-list li {
+    padding: 5px 0;
+    border-bottom: 1px solid #2c3e50;
+    font-size: 0.9em;
+}
+
+.users-list li:last-child {
+    border-bottom: none;
+}
+
+.users-list li.current-user {
+    color: #f39c12;
+    font-weight: bold;
+}
+
+/* Bouton de déconnexion */
+.logout-btn {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    padding: 10px 20px;
+    background: #e74c3c;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: background 0.3s ease;
+}
+
+.logout-btn:hover {
+    background: #c0392b;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .game-area {
+        margin: 0 10px;
+    }
+    
+    .player-position {
+    position: absolute;
+    width: 140px;
+    height: 140px;
+    border: 3px solid #3498db;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.9);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    font-size: 14px;
+    text-align: center;
+    }
+
+    .users-list {
+        max-width: 200px;
+        font-size: 0.8em;
+    }
+}
+
+.start-btn {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 15px 40px;
+    background: linear-gradient(135deg, #e74c3c, #c0392b);
+    color: white;
+    border: none;
+    border-radius: 25px;
+    cursor: pointer;
+    font-size: 1.2em;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    box-shadow: 0 4px 15px rgba(231, 76, 60, 0.4);
+    transition: all 0.3s ease;
+    z-index: 10;
+}
+
+.start-btn:hover {
+    transform: translateX(-50%) translateY(-2px);
+    box-shadow: 0 6px 20px rgba(231, 76, 60, 0.6);
+    background: linear-gradient(135deg, #c0392b, #a93226);
+}
+
+.start-btn:active {
+    transform: translateX(-50%) translateY(0px);
+    box-shadow: 0 2px 10px rgba(231, 76, 60, 0.4);
+}
+
+.start-btn:disabled {
+    background: #95a5a6;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.start-btn:disabled:hover {
+    transform: translateX(-50%);
+    background: #95a5a6;
+}
+
+.join-btn {
+    position: absolute;
+    bottom: 100px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 12px 30px;
+    background: linear-gradient(135deg, #3498db, #2980b9);
+    color: white;
+    border: none;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 1.1em;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    box-shadow: 0 4px 15px rgba(52, 152, 219, 0.4);
+    transition: all 0.3s ease;
+    z-index: 10;
+    min-width: 120px;
+}
+
+.join-btn:hover {
+    transform: translateX(-50%) translateY(-2px);
+    box-shadow: 0 6px 20px rgba(52, 152, 219, 0.6);
+    background: linear-gradient(135deg, #2980b9, #21618c);
+}
+
+.join-btn:active {
+    transform: translateX(-50%) translateY(0px);
+    box-shadow: 0 2px 10px rgba(52, 152, 219, 0.4);
+}
+
+/* Style LEAVE */
+.join-btn.leave-mode {
+    background: linear-gradient(135deg, #e74c3c, #c0392b);
+    box-shadow: 0 4px 15px rgba(231, 76, 60, 0.4);
+}
+
+.join-btn.leave-mode:hover {
+    background: linear-gradient(135deg, #c0392b, #a93226);
+    box-shadow: 0 6px 20px rgba(231, 76, 60, 0.6);
+}
+
+.join-btn.leave-mode:active {
+    box-shadow: 0 2px 10px rgba(231, 76, 60, 0.4);
+}
+
+
+/* .container {
     background: white;
     padding: 20px;
     border-radius: 8px;
@@ -59,4 +374,4 @@ body {
     padding: 10px;
     margin-bottom: 5px;
     border-radius: 4px;
-}
+} */
