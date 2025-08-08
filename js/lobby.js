@@ -124,7 +124,7 @@ async function leaveGame() {
 
         if (response.ok) {
             // Cloner la réponse pour pouvoir la lire plusieurs fois si nécessaire
-            const responseClone = response.clone();
+            // const responseClone = response.clone();
             const contentType = response.headers.get('content-type');
             let data = null;
             
@@ -150,12 +150,10 @@ async function leaveGame() {
                 }));
             }
             
-            // Mettre à jour l'interface locale
             updateLocalPlayerLeft(username);
             showNotification('Vous avez quitté la partie!', 'info');
             
         } else {
-            // Gérer les erreurs HTTP
             let errorMessage = 'Erreur inconnue';
             try {
                 const errorData = await response.json();
@@ -186,7 +184,6 @@ function updateLocalPlayerJoined(username, player) {
     const joinBtn = document.getElementById('joinBtn');
     const startBtn = document.getElementById('startBtn');
     
-    // Mettre à jour la position centrale
     if (centerPlus) centerPlus.style.display = 'none';
     if (centerText) centerText.style.display = 'none';
     if (playerName) {
@@ -217,7 +214,6 @@ function updateLocalPlayerLeft(username) {
     const joinBtn = document.getElementById('joinBtn');
     const startBtn = document.getElementById('startBtn');
     
-    // Remettre l'affichage initial de la position centrale
     if (centerPlus) centerPlus.style.display = 'block';
     if (centerText) {
         centerText.style.display = 'block';
@@ -231,7 +227,6 @@ function updateLocalPlayerLeft(username) {
         centerPosition.classList.remove('joined');
     }
     
-    // Mettre à jour le bouton LEAVE -> JOIN
     if (joinBtn) {
         joinBtn.textContent = 'JOIN';
         joinBtn.classList.remove('leave-mode');
@@ -239,14 +234,14 @@ function updateLocalPlayerLeft(username) {
     
     hasJoined = false;
     
-    // Masquer le bouton START
     if (startBtn) startBtn.style.display = 'none';
 }
 
 // Fonction pour afficher des notifications
 function showNotification(message, type = 'info') {
-    // Créer l'élément de notification s'il n'existe pas
+
     let notification = document.getElementById('notification');
+
     if (!notification) {
         notification = document.createElement('div');
         notification.id = 'notification';
@@ -265,7 +260,6 @@ function showNotification(message, type = 'info') {
         document.body.appendChild(notification);
     }
     
-    // Définir le style selon le type
     const colors = {
         success: '#2ecc71',
         error: '#e74c3c',
@@ -276,14 +270,12 @@ function showNotification(message, type = 'info') {
     notification.style.backgroundColor = colors[type] || colors.info;
     notification.textContent = message;
     
-    // Animer l'apparition
     setTimeout(() => {
         notification.style.transform = 'translateX(0)';
     }, 100);
     
-    // Masquer après 3 secondes
     setTimeout(() => {
-        notification.style.transform = 'translateX(100%)';
+        notification.style.transform = 'translateX(1000%)';
     }, 3000);
 }
 
@@ -303,7 +295,9 @@ async function fetchGameState() {
         if (response.ok) {
             const data = await response.json();
             gameState = data.game;
+            console.log('État du jeu récupéré:', data);
             updateGameDisplay(data.players);
+            updateConnectedUsersList(data.connected_users);
         }
     } catch (error) {
         console.error('Erreur lors de la récupération de l\'état du jeu:', error);
@@ -389,7 +383,6 @@ function updateGameDisplay(players) {
         if (startBtn) startBtn.style.display = 'none';
     }
     
-    updateConnectedUsersList(players);
 }
 
 // Fonction de connexion WebSocket
@@ -522,7 +515,7 @@ async function startGame() {
 }
 
 // Mise à jour de la liste des utilisateurs connectés
-function updateConnectedUsersList(players) {
+function updateConnectedUsersList(connected_users) {
     const usersList = document.getElementById('connectedUsersList');
     if (!usersList) return;
     
@@ -530,15 +523,15 @@ function updateConnectedUsersList(players) {
     
     const currentUsername = getCurrentUsername();
     
-    if (players && typeof players === 'object') {
-        Object.values(players).forEach(player => {
+    if (connected_users && Array.isArray(connected_users)) {
+        connected_users.sort().forEach(username => {
             const li = document.createElement('li');
             
-            if (player.name === currentUsername) {
+            if (username === currentUsername) {
                 li.classList.add('current-user');
-                li.textContent = `${player.name} (vous)`;
+                li.textContent = `${username} (vous)`;
             } else {
-                li.textContent = `${player.name}`;
+                li.textContent = username;
             }
             
             usersList.appendChild(li);
