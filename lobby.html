@@ -1,73 +1,56 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lobby</title>
+    <title>Katana - Lobby</title>
     <link rel="stylesheet" href="css/styles.css">
 </head>
-<body>
-    <div class="container">
-        <h1>KataNaze - Lobby</h1>
-        
-        <div class="game-area">
-            <div class="player-position top-left" data-position="1">
-                <div class="plus-icon">+</div>
-                <span class="position-text">Position 1</span>
-            </div>
-            
-            <div class="player-position top-right" data-position="2">
-                <div class="plus-icon">+</div>
-                <span class="position-text">Position 2</span>
-            </div>
-            
-            <div class="player-position middle-left" data-position="3">
-                <div class="plus-icon">+</div>
-                <span class="position-text">Position 3</span>
-            </div>
-            
-            <div class="player-position center" data-position="4">
-                <div class="plus-icon" id="centerPlus">+</div>
-                <span class="position-text" id="centerText">Position 4</span>
-                <span class="player-name" id="playerName" style="display: none;"></span>
-            </div>
-            
-            <div class="player-position middle-right" data-position="5">
-                <div class="plus-icon">+</div>
-                <span class="position-text">Position 5</span>
-            </div>
-            
-            <div class="player-position bottom-left" data-position="6">
-                <div class="plus-icon">+</div>
-                <span class="position-text">Position 6</span>
-            </div>
-            
-            <div class="player-position bottom-right" data-position="7">
-                <div class="plus-icon">+</div>
-                <span class="position-text">Position 7</span>
-            </div>
+<body class="page-lobby">
+    <header class="topbar">
+        <div class="brand">KATANA</div>
+        <div class="topbar-right">
+            <span class="conn conn-connecting" id="connStatus" title="État de la connexion temps réel">
+                <i></i><span id="connLabel">Connexion…</span>
+            </span>
+            <span class="me" id="meName"></span>
+            <button type="button" class="btn btn-ghost btn-small" id="logoutBtn">Se déconnecter</button>
         </div>
+    </header>
 
-        <button class="join-btn" id="joinBtn" onclick="toggleJoinLeave()">
-            JOIN
-        </button>
-        
-        <!-- Liste des utilisateurs connectés (bas gauche) -->
-        <div class="users-list">
-            <h3>Utilisateurs Connectés</h3>
-            <ul id="connectedUsersList">
-                <!-- Les utilisateurs seront ajoutés dynamiquement -->
-            </ul>
-        </div>
-        
-        <button class="start-btn" id="startBtn" onclick="startGame()" style="display: none;">
-            START GAME
-        </button>
+    <main class="lobby">
+        <section class="table-card" aria-label="Table de jeu">
+            <div class="table" id="table">
+                <div class="table-center">
+                    <div class="phase" id="phase">Salle d'attente</div>
+                    <div class="count"><span id="count">0</span><small> / <span id="maxCount">7</span> joueurs</small></div>
+                    <div class="progress" aria-hidden="true">
+                        <div class="progress-bar" id="progressBar"></div>
+                        <div class="progress-min" id="progressMin"></div>
+                    </div>
+                    <p class="hint" id="hint"></p>
+                    <div class="actions">
+                        <button type="button" class="btn btn-primary" id="joinBtn">Rejoindre</button>
+                        <button type="button" class="btn btn-danger" id="startBtn" hidden>Lancer la partie</button>
+                    </div>
+                </div>
+            </div>
+        </section>
 
-        <!-- Bouton de déconnexion -->
-        <button class="logout-btn" onclick="logout()">Se déconnecter</button>
-    </div>
+        <aside class="side">
+            <section class="panel">
+                <h2>Joueurs <span class="badge" id="playersCount">0</span></h2>
+                <ul class="list" id="playersList"></ul>
+            </section>
+            <section class="panel">
+                <h2>En ligne <span class="badge" id="onlineCount">0</span></h2>
+                <ul class="list" id="onlineList"></ul>
+            </section>
+        </aside>
+    </main>
 
+    <script src="js/config.js"></script>
+    <script src="js/common.js"></script>
     <script src="js/lobby.js"></script>
 </body>
 </html>

@@ -1,22 +1,27 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login</title>
+    <title>Katana - Connexion</title>
     <link rel="stylesheet" href="css/styles.css">
 </head>
-<body>
-    <div class="container">
-        <h1>KataNaze - Login</h1>
+<body class="page-login">
+    <main class="login-card">
+        <div class="brand brand-large">KATANA</div>
+        <p class="subtitle">Choisissez un pseudo pour rejoindre le dojo.</p>
 
-        <div class="form-group">
-            <label for="username">Username:</label>
-            <input type="text" id="username" placeholder="Enter your username">
-            <button class="login-btn" onclick="login()">Login</button>
-        </div>
-    </div>
+        <form id="loginForm" novalidate>
+            <label for="username">Pseudo</label>
+            <input type="text" id="username" name="username" placeholder="Ex : Tomoe" maxlength="20"
+                   autocomplete="username" autofocus required>
+            <p class="form-error" id="loginError" role="alert" hidden></p>
+            <button type="submit" class="btn btn-primary btn-block" id="loginBtn">Entrer</button>
+        </form>
+    </main>
 
+    <script src="js/config.js"></script>
+    <script src="js/common.js"></script>
     <script src="js/login.js"></script>
 </body>
 </html>
