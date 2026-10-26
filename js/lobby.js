@@ -246,6 +246,23 @@ function startGame() {
     });
 }
 
+// Mode debug (backend en APP_ENV=development) : partie fictive avec bots
+function debugGame(start) {
+    return runAction(async () => {
+        const { ok, data } = await apiFetch(`/debug/game?players=3&start=${start}`, { method: 'POST' });
+        if (!ok) showToast(data.error || 'Mode debug indisponible.', 'error');
+        await refreshState();
+    });
+}
+
+function debugReset() {
+    return runAction(async () => {
+        const { ok, data } = await apiFetch('/debug/game', { method: 'DELETE' });
+        if (!ok) showToast(data.error || 'Mode debug indisponible.', 'error');
+        await refreshState();
+    });
+}
+
 async function logout() {
     leavingPage = true;
     clearTimeout(reconnectTimer);
@@ -340,6 +357,13 @@ if (!Session.isValid()) {
     $('joinBtn').addEventListener('click', () => (view().isIn ? leaveGame() : joinGame()));
     $('startBtn').addEventListener('click', startGame);
     $('logoutBtn').addEventListener('click', logout);
+
+    if (CONFIG.DEBUG) {
+        for (const id of ['debugBtn', 'debugStartBtn', 'debugResetBtn']) $(id).hidden = false;
+        $('debugBtn').addEventListener('click', () => debugGame(false));
+        $('debugStartBtn').addEventListener('click', () => debugGame(true));
+        $('debugResetBtn').addEventListener('click', debugReset);
+    }
 
     document.addEventListener('visibilitychange', () => {
         if (!document.hidden) refreshState();
