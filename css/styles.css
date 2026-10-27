@@ -515,6 +515,252 @@ button {
     color: var(--blue);
 }
 
+/* ---------- Plateau de jeu ---------- */
+
+.game {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 16px 24px 24px;
+}
+
+.board {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-height: calc(100vh - 100px);
+    padding: 16px;
+    border: 6px solid #3b2a1c;
+    border-radius: 24px;
+    background: radial-gradient(ellipse at center, #1e3a2c 0%, #14261d 75%);
+    box-shadow: inset 0 0 50px rgba(0, 0, 0, 0.6), 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+
+.opponents {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px;
+}
+
+.opponent {
+    display: flex;
+    gap: 10px;
+    width: 250px;
+    padding: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.3);
+}
+
+.opponent .character {
+    width: 70px;
+}
+
+.opponent-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+    flex: 1;
+}
+
+.opponent-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.opponent-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 700;
+    font-size: 0.9rem;
+}
+
+.crown-inline {
+    color: var(--gold);
+}
+
+.opponent-char,
+.opponent-hand {
+    font-size: 0.75rem;
+    color: #c9d1c8;
+}
+
+.felt {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 48px;
+    min-height: 200px;
+}
+
+.pile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+
+.pile-card {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 120px;
+    aspect-ratio: 5 / 7;
+    border: 2px dashed rgba(255, 255, 255, 0.25);
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.pile-card:has(> img),
+.pile-card:has(> .card) {
+    border: none;
+    background: none;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
+}
+
+.pile-card .card {
+    width: 100%;
+}
+
+.pile-label {
+    font-size: 0.8rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--gold);
+}
+
+.pile-label b {
+    margin-left: 4px;
+    color: var(--text);
+}
+
+.mine-zone {
+    display: grid;
+    grid-template-columns: 150px minmax(180px, 260px) minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+    padding: 14px;
+    border: 2px solid var(--gold);
+    border-radius: 14px;
+    background: rgba(0, 0, 0, 0.35);
+}
+
+.mine-character {
+    width: 150px;
+}
+
+.mine-head {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+
+.mine-name {
+    font-weight: 700;
+    color: var(--gold);
+}
+
+.zone-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #c9d1c8;
+}
+
+.character,
+.card {
+    position: relative;
+    aspect-ratio: 5 / 7;
+    border-radius: 8px;
+    overflow: hidden;
+    background: rgba(0, 0, 0, 0.35);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5);
+}
+
+.character img,
+.card img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.card-fallback {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    padding: 4px;
+    text-align: center;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.cards {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.cards .card {
+    width: 110px;
+}
+
+.mine-hand .cards .card {
+    transition: transform 0.15s;
+}
+
+.mine-hand .cards .card:hover {
+    transform: translateY(-8px);
+}
+
+.cards-small .card {
+    width: 60px;
+}
+
+.cards-mini .card {
+    width: 34px;
+}
+
+.cards-empty {
+    font-size: 0.75rem;
+    font-style: italic;
+    color: var(--muted);
+}
+
+.life {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.heart {
+    font-style: normal;
+    font-size: 1rem;
+    line-height: 1;
+    color: rgba(255, 255, 255, 0.2);
+}
+
+.heart.full {
+    color: var(--accent);
+}
+
+.life-text {
+    margin-left: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
 /* ---------- Notifications ---------- */
 
 #toasts {
@@ -561,6 +807,30 @@ button {
 
     .table-card {
         padding: 12px;
+    }
+
+    .game {
+        padding: 8px;
+    }
+
+    .mine-zone {
+        grid-template-columns: 110px minmax(0, 1fr);
+    }
+
+    .mine-character {
+        width: 110px;
+    }
+
+    .mine-hand {
+        grid-column: 1 / -1;
+    }
+
+    .mine-hand .cards .card {
+        width: 80px;
+    }
+
+    .pile-card {
+        width: 90px;
     }
 }
 

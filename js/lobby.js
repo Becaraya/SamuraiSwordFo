@@ -6,8 +6,11 @@ const state = {
     host: '',
     minPlayers: 3,
     maxPlayers: 7,
-    connected: []
+    connected: [],
+    hand: []
 };
+
+let handKey = '';
 
 let socket = null;
 let reconnectAttempts = 0;
@@ -69,6 +72,34 @@ function applyState(data) {
     state.maxPlayers = data.max_players || state.maxPlayers;
     if (Array.isArray(data.connected_users)) state.connected = data.connected_users;
     render();
+    syncHand();
+}
+
+// La main est privée : elle est récupérée à part quand l'état de la partie change.
+function syncHand() {
+    const v = view();
+    const key = v.started && v.isIn
+        ? `${state.game.id}:${state.players[me].hand_count}:${state.game.deck_count}:${state.game.discard_count}`
+        : '';
+    if (key === handKey) return;
+    handKey = key;
+
+    if (!key) {
+        state.hand = [];
+        render();
+        return;
+    }
+    refreshHand();
+}
+
+async function refreshHand() {
+    const { ok, data } = await apiFetch('/game/hand');
+    if (!ok) {
+        handKey = '';
+        return;
+    }
+    state.hand = data.hand || [];
+    renderMyZone();
 }
 
 // ---------- Rendu ----------
@@ -153,6 +184,8 @@ function renderCenter(v) {
     const startBtn = $('startBtn');
     startBtn.hidden = !(v.isHost && !v.started);
     startBtn.disabled = busy || v.count < state.minPlayers;
+
+    $('debugBotBtn').disabled = busy || v.started || v.full || !state.game;
 }
 
 function renderLists(v) {
@@ -187,9 +220,126 @@ function renderLists(v) {
 
 function render() {
     const v = view();
+    const inGame = v.started && v.isIn;
+    $('gameView').hidden = !inGame;
+    $('lobbyView').hidden = inGame;
+
+    $('endBtn').hidden = !(inGame && v.isHost);
+    $('endBtn').disabled = busy;
+
+    if (inGame) {
+        renderGame();
+        return;
+    }
     renderSeats(v);
     renderCenter(v);
     renderLists(v);
+}
+
+// ---------- Plateau de jeu ----------
+
+const CARD_BACK = 'dos_katana';
+const CARD_FILES = { ju_jitsu: 'Carte Jujitsu _ Projection de Tortue' };
+
+function cardUrl(file) {
+    return encodeURI(`assets/cartes/${CARD_FILES[file] || file}.png`);
+}
+
+function cardTitle(card) {
+    if (card.category === 'arme') return `${card.name} — Précision ${card.precision}, Dégâts ${card.damage}`;
+    return card.effect ? `${card.name} — ${card.effect}` : card.name;
+}
+
+function cardImage(file, label) {
+    const img = el('img');
+    img.src = cardUrl(file);
+    img.alt = label;
+    img.draggable = false;
+    img.addEventListener('error', () => {
+        img.replaceWith(el('span', 'card-fallback', label));
+    });
+    return img;
+}
+
+function cardNode(card) {
+    const node = el('div', `card card-${card.category}`);
+    node.title = cardTitle(card);
+    node.appendChild(cardImage(card.id, card.name));
+    return node;
+}
+
+function fillCards(container, cards, emptyText) {
+    container.replaceChildren(...cards.map(cardNode));
+    if (!cards.length) container.appendChild(el('span', 'cards-empty', emptyText));
+}
+
+function lifeNode(life, max) {
+    const root = el('span', 'life');
+    root.title = `${life} / ${max} points de vie`;
+    for (let i = 0; i < max; i++) root.appendChild(el('i', i < life ? 'heart full' : 'heart', '♥'));
+    root.appendChild(el('span', 'life-text', `${life}/${max}`));
+    return root;
+}
+
+function characterNode(character) {
+    const node = el('div', 'character');
+    if (!character) return node;
+    node.title = `${character.name} — ${character.ability}`;
+    node.appendChild(cardImage(character.id, character.name));
+    return node;
+}
+
+function opponentNode(player) {
+    const root = el('article', 'opponent');
+    root.append(characterNode(player.character));
+
+    const info = el('div', 'opponent-info');
+    const head = el('div', 'opponent-head');
+    head.append(el('span', 'opponent-name', player.name));
+    if (player.name === state.host) head.append(el('span', 'crown-inline', '♛'));
+    info.append(
+        head,
+        el('div', 'opponent-char', player.character ? player.character.name : ''),
+        lifeNode(player.life, player.max_life)
+    );
+
+    const hand = el('div', 'opponent-hand', `Main : ${player.hand_count}`);
+    hand.title = `${player.hand_count} carte${player.hand_count > 1 ? 's' : ''} en main`;
+    info.append(hand);
+
+    const permanents = el('div', 'cards cards-mini');
+    fillCards(permanents, player.permanents || [], '');
+    info.append(permanents);
+
+    root.append(info);
+    return root;
+}
+
+function renderMyZone() {
+    const mine = state.players[me];
+    if (!mine) return;
+
+    $('mineCharacter').replaceChildren(characterNode(mine.character));
+    $('mineName').textContent = mine.character ? `${me} — ${mine.character.name}` : me;
+    $('mineLife').replaceChildren(lifeNode(mine.life, mine.max_life));
+    fillCards($('minePermanents'), mine.permanents || [], 'Aucun');
+    fillCards($('mineHand'), state.hand, 'Main vide');
+    $('handCount').textContent = state.hand.length;
+}
+
+function renderGame() {
+    const players = Object.values(state.players).sort((a, b) => a.position - b.position);
+    const myIndex = players.findIndex(p => p.name === me);
+    const opponents = players.slice(myIndex + 1).concat(players.slice(0, myIndex));
+    $('opponents').replaceChildren(...opponents.map(opponentNode));
+
+    const g = state.game;
+    $('deckCount').textContent = g.deck_count;
+    $('deckCard').replaceChildren(g.deck_count > 0 ? cardImage(CARD_BACK, 'Pioche') : el('span', 'cards-empty', 'Vide'));
+    $('discardCount').textContent = g.discard_count;
+    $('discardCard').replaceChildren(g.discard_top ? cardNode(g.discard_top) : el('span', 'cards-empty', 'Aucune carte jouée'));
+
+    renderMyZone();
 }
 
 function setConnection(status) {
@@ -246,11 +396,33 @@ function startGame() {
     });
 }
 
+function endGame() {
+    if (!window.confirm('Terminer la partie et revenir au lobby ?')) return Promise.resolve();
+    return runAction(async () => {
+        const { ok, data } = await apiFetch('/game/end', { method: 'POST' });
+        if (!ok) {
+            const message = data.code === 'NOT_HOST'
+                ? 'Seul l\'hôte peut terminer la partie.'
+                : (data.error || 'Impossible de terminer la partie.');
+            showToast(message, 'error');
+        }
+        await refreshState();
+    });
+}
+
 // Mode debug (backend en APP_ENV=development) : partie fictive avec bots
 function debugGame(start) {
     return runAction(async () => {
         const { ok, data } = await apiFetch(`/debug/game?players=3&start=${start}`, { method: 'POST' });
         if (!ok) showToast(data.error || 'Mode debug indisponible.', 'error');
+        await refreshState();
+    });
+}
+
+function debugAddBot() {
+    return runAction(async () => {
+        const { ok, data } = await apiFetch('/debug/bot', { method: 'POST' });
+        if (!ok) showToast(data.error || 'Impossible d\'ajouter un bot.', 'error');
         await refreshState();
     });
 }
@@ -297,6 +469,9 @@ function handleGameUpdate(message) {
             break;
         case 'game_started':
             showToast('La partie commence !', 'success');
+            break;
+        case 'game_ended':
+            showToast('La partie est terminée.', 'info');
             break;
     }
 
@@ -356,11 +531,13 @@ if (!Session.isValid()) {
 
     $('joinBtn').addEventListener('click', () => (view().isIn ? leaveGame() : joinGame()));
     $('startBtn').addEventListener('click', startGame);
+    $('endBtn').addEventListener('click', endGame);
     $('logoutBtn').addEventListener('click', logout);
 
     if (CONFIG.DEBUG) {
-        for (const id of ['debugBtn', 'debugStartBtn', 'debugResetBtn']) $(id).hidden = false;
+        for (const id of ['debugBtn', 'debugStartBtn', 'debugBotBtn', 'debugResetBtn']) $(id).hidden = false;
         $('debugBtn').addEventListener('click', () => debugGame(false));
+        $('debugBotBtn').addEventListener('click', debugAddBot);
         $('debugStartBtn').addEventListener('click', () => debugGame(true));
         $('debugResetBtn').addEventListener('click', debugReset);
     }

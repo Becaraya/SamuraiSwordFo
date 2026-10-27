@@ -14,11 +14,45 @@
                 <i></i><span id="connLabel">Connexion…</span>
             </span>
             <span class="me" id="meName"></span>
+            <button type="button" class="btn btn-danger btn-small" id="endBtn" hidden>Terminer la partie</button>
             <button type="button" class="btn btn-ghost btn-small" id="logoutBtn">Se déconnecter</button>
         </div>
     </header>
 
-    <main class="lobby">
+    <main class="game" id="gameView" hidden>
+        <section class="board" aria-label="Plateau de jeu">
+            <div class="opponents" id="opponents"></div>
+
+            <div class="felt">
+                <div class="pile" id="deckPile">
+                    <div class="pile-card" id="deckCard"></div>
+                    <span class="pile-label">Pioche <b id="deckCount">0</b></span>
+                </div>
+                <div class="pile" id="discardPile">
+                    <div class="pile-card" id="discardCard"></div>
+                    <span class="pile-label">Défausse <b id="discardCount">0</b></span>
+                </div>
+            </div>
+
+            <div class="mine-zone" id="mineZone">
+                <div class="mine-character" id="mineCharacter"></div>
+                <div class="mine-info">
+                    <div class="mine-head">
+                        <span class="mine-name" id="mineName"></span>
+                        <span class="life-slot" id="mineLife"></span>
+                    </div>
+                    <div class="zone-title">Permanents</div>
+                    <div class="cards cards-small" id="minePermanents"></div>
+                </div>
+                <div class="mine-hand">
+                    <div class="zone-title">Votre main <span class="badge" id="handCount">0</span></div>
+                    <div class="cards" id="mineHand"></div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <main class="lobby" id="lobbyView">
         <section class="table-card" aria-label="Table de jeu">
             <div class="table" id="table">
                 <div class="table-center">
@@ -34,6 +68,7 @@
                         <button type="button" class="btn btn-danger" id="startBtn" hidden>Lancer la partie</button>
                         <button type="button" class="btn btn-ghost btn-small" id="debugBtn" hidden title="Mode debug : partie fictive avec bots">Partie de test</button>
                         <button type="button" class="btn btn-ghost btn-small" id="debugStartBtn" hidden title="Mode debug : partie fictive déjà lancée">Test lancée</button>
+                        <button type="button" class="btn btn-ghost btn-small" id="debugBotBtn" hidden title="Mode debug : ajouter un bot à la partie">+ Bot</button>
                         <button type="button" class="btn btn-ghost btn-small" id="debugResetBtn" hidden title="Mode debug : supprimer la partie">Reset</button>
                     </div>
                 </div>
