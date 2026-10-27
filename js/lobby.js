@@ -14,13 +14,13 @@ const state = {
     hand: [],
     role: null,
     plays: [],
-    parryCards: [],
+    responseCards: [],
     limit: null,
     targets: null,
     picks: [],
     sel: null
 };
-const ui = { roleShown: false, sheet: null, sideOpen: false, tab: 'log', target: null };
+const ui = { roleShown: false, sheet: null, sideOpen: false, tab: 'log', target: null, dismissedResults: null };
 
 let socket = null;
 let reconnectAttempts = 0;
@@ -42,6 +42,7 @@ const GLYPHS = {
     ceremonie_du_the: '茶', cri_de_guerre: '吼', daimyo: '大', diversion: '誘', geisha: '芸', ju_jitsu: '柔', meditation: '瞑', parade: '防'
 };
 const CAT_LABEL = { arme: 'Arme', action: 'Action', permanente: 'Permanente' };
+const CAMP_LABEL = { shogun_samourai: 'Camp du Shogun', ninja: 'Camp des Ninjas', ronin: 'Camp du Ronin' };
 const PHASES = [['recover', 'Récupération'], ['draw', 'Pioche'], ['play', 'Jeu'], ['discard', 'Défausse']];
 const DOWN_LABEL = { hp: 'À terre : 0 PV', hand: 'À terre : aucune carte en main' };
 const ROLE_GOAL = {
@@ -139,7 +140,7 @@ function syncPrivate() {
     if (v.started && v.isIn) return refreshPrivate();
 
     if (state.hand.length || state.role) {
-        Object.assign(state, { hand: [], role: null, plays: [], parryCards: [], limit: null, targets: null, sel: null, picks: [] });
+        Object.assign(state, { hand: [], role: null, plays: [], responseCards: [], limit: null, targets: null, sel: null, picks: [] });
         ui.target = null;
         render();
     }
@@ -152,7 +153,7 @@ async function refreshPrivate() {
     state.hand = data.hand || [];
     state.role = data.role || null;
     state.plays = data.plays || [];
-    state.parryCards = data.parry_cards || [];
+    state.responseCards = data.response_cards || [];
     state.limit = data.weapon_limit || null;
     if (state.sel !== null && (!state.hand[state.sel] || state.hand[state.sel].id !== previous)) clearSelection();
     state.picks = state.picks.filter(i => i < state.hand.length);
@@ -316,12 +317,62 @@ function inspectorHTML() {
     const body = `<div class="inspect">${bigCard(c)}
         <div><p class="statline">${CAT_LABEL[c.category]}</p>${stats}<p>${esc(c.effect || 'Attaque un joueur à portée.')}</p>
         ${pl.reason ? `<p class="reason"><b>Non jouable maintenant :</b> ${esc(pl.reason)}</p>` : ''}</div></div>`;
-    return box(pl.ok ? 'turn' : 'wait', 'Carte sélectionnée', esc(c.name), body, btn('cancel', 'Désélectionner', 'btn btn-ghost'));
+    const play = pl.ok && !pl.needs_target ? btn('playCard', c.category === 'permanente' ? 'Poser devant moi' : 'Jouer cette carte', 'btn btn-primary', busy ? 'disabled' : '') : '';
+    return box(pl.ok ? 'turn' : 'wait', 'Carte sélectionnée', esc(c.name), body, `${play}${btn('cancel', 'Désélectionner', 'btn btn-ghost')}`);
+}
+
+// Ce que le serveur attend de moi : parade, réponse à un effet collectif ou décision du Code du Bushido.
+function myResponse() {
+    const g = state.game;
+    if (!g || !state.players[me]) return null;
+    if (g.pending && g.pending.target === me) return 'attack';
+    if (g.collective && g.collective.rows.some(r => r.name === me && r.status === 'pending')) return 'collective';
+    if (g.bushido && g.bushido.player === me) return 'bushido';
+    return null;
+}
+
+function collectiveHTML(col) {
+    const mine = myResponse() === 'collective';
+    const icon = { pending: '…', done: '✓', exempt: '—' };
+    const rows = col.rows.map(r => `<li class="st-${r.status}${r.name === me ? ' me' : ''}"><span aria-hidden="true">${icon[r.status]}</span><b>${esc(r.name)}${r.name === me ? ' (vous)' : ''}</b><span>${r.status === 'pending' ? 'Réponse attendue' : esc(r.text || '')}</span></li>`).join('');
+    const what = col.card.id === 'ju_jitsu' ? 'une arme' : 'une Parade';
+    const intro = mine ? `<p><b>À vous de répondre :</b> sélectionnez ${what} à défausser, ou perdez 1 PV.</p>` : '<p>En attente des réponses des joueurs concernés.</p>';
+    const actions = mine ? `${state.picks.length ? btn('parry', 'Défausser la carte sélectionnée', 'btn btn-primary', busy ? 'disabled' : '') : ''}${btn('takeHit', 'Perdre 1 PV', 'btn btn-ghost', busy ? 'disabled' : '')}` : '';
+    return box(mine ? 'react' : 'wait', 'Réaction collective', `${esc(col.issuer)} joue ${esc(col.card.name)}`,
+        `${intro}<ul class="responders">${rows}</ul><p class="note">Les réponses ne révèlent jamais le contenu des mains.</p>`, actions);
+}
+
+function bushidoHTML(b) {
+    if (b.player !== me) {
+        return box('wait', 'Code du Bushido', `${esc(b.player)} doit décider`,
+            `<p>La carte révélée est ${esc(b.revealed.name)} (une arme, défaussée). ${esc(b.player)} défausse une arme ou perd 1 point d'honneur.</p>`);
+    }
+    const p = myPlayer();
+    const hasWeapon = state.responseCards.length > 0;
+    const body = `<div class="inspect">${bigCard(b.revealed)}
+        <div><p>La carte révélée est une <b>arme</b> (défaussée). Vous devez choisir :</p>
+        <ol class="choices"><li><b>A.</b> Défausser 1 arme de votre main et passer le Code à ${esc(b.next)}.</li>
+        <li><b>B.</b> ${b.free ? 'Défausser le Code (le Shogun ne perd pas d\'honneur à 3 joueurs).' : `Perdre 1 point d'honneur (${p.honor} → ${p.honor - 1}) et défausser le Code.`}</li></ol>
+        ${hasWeapon ? '<p class="note">Option A : sélectionnez une arme dans votre main.</p>' : '<p class="reason"><b>Option A indisponible :</b> vous n\'avez aucune arme en main.</p>'}</div></div>`;
+    const actions = `${state.picks.length ? btn('parry', `A · Défausser l'arme et passer le Code à ${esc(b.next)}`, 'btn btn-primary', busy ? 'disabled' : '') : ''}${btn('takeHit', b.free ? 'B · Défausser le Code' : 'B · Perdre 1 point d\'honneur', 'btn btn-ghost', busy ? 'disabled' : '')}`;
+    return box('turn', 'Récupération · Code du Bushido', 'Une décision est attendue', body, actions);
+}
+
+function targetConfirmHTML() {
+    const c = state.hand[state.sel];
+    const t = state.targets[ui.target];
+    if (t.options && t.options.length) {
+        return box('turn', esc(c.name), `Quel effet sur ${esc(ui.target)} ?`,
+            '<p>Une carte prise dans la main est tirée au hasard : vous ne la choisissez pas.</p>',
+            `${t.options.map(o => btn('playOption', esc(o.label), 'btn', `data-o="${esc(o.id)}" ${busy ? 'disabled' : ''}`)).join('')}${btn('changeTarget', 'Changer de cible', 'btn btn-ghost')}`);
+    }
+    return box('turn', 'Confirmer', `${esc(c.name)} → ${esc(ui.target)}`, `<p>${esc(c.effect || '')}</p>`,
+        `${btn('confirmPlay', `Jouer ${esc(c.name)}`, 'btn btn-primary', busy ? 'disabled' : '')}${btn('changeTarget', 'Changer de cible', 'btn btn-ghost')}`);
 }
 
 function reactionHTML(pend) {
     const p = myPlayer();
-    const canParry = state.parryCards.length > 0;
+    const canParry = state.responseCards.length > 0;
     const body = `<div class="inspect">${bigCard(pend.weapon)}
         <div><p><b>${esc(pend.attacker)}</b> vous attaque avec ${esc(pend.weapon.name)}.</p>
         <p class="statline">Dégâts potentiels <b>${pend.damage.total}</b> · PV ${p.life} → ${Math.max(0, p.life - pend.damage.total)}</p>${calcParts(pend.damage.parts)}</div></div>
@@ -363,6 +414,8 @@ function gamePrompt(v) {
     if (v.spectator) {
         return box('wait', 'Spectateur', `Tour de ${esc(g.active)}`, '<p>Vous observez la partie. Vous ne voyez ni les mains ni les rôles cachés, et ne pouvez pas agir.</p>');
     }
+    if (g.collective) return collectiveHTML(g.collective);
+    if (g.bushido) return bushidoHTML(g.bushido);
     if (v.myTurn && g.phase === 'discard') {
         const need = myPlayer().hand_count - 7;
         return box('turn', 'Phase de défausse', `Défaussez ${plural(need, 'carte', 'cartes')}`,
@@ -370,9 +423,10 @@ function gamePrompt(v) {
             btn('discard', 'Valider la défausse', 'btn btn-primary', state.picks.length === need && !busy ? '' : 'disabled'));
     }
     if (v.myTurn && state.sel !== null && state.targets) {
-        if (ui.target) return previewHTML();
+        if (ui.target) return state.hand[state.sel].category === 'arme' ? previewHTML() : targetConfirmHTML();
+        const self = state.targets[me] ? btn('pickTarget', 'Devant moi', 'btn', `data-name="${esc(me)}"`) : '';
         return box('turn', 'Choisissez une cible', `${esc(state.hand[state.sel].name)} — qui visez-vous ?`,
-            '<p>Les joueurs marqués ◎ sont à portée. Touchez un joueur marqué ⊘ pour connaître la raison.</p>', btn('cancel', 'Annuler', 'btn btn-ghost'));
+            '<p>Les joueurs marqués ◎ sont des cibles possibles. Touchez un joueur marqué ⊘ pour connaître la raison.</p>', `${self}${btn('cancel', 'Annuler', 'btn btn-ghost')}`);
     }
     if (state.sel !== null && state.hand[state.sel]) return inspectorHTML();
     if (v.myTurn) {
@@ -391,13 +445,13 @@ function dockHTML(v) {
     const p = myPlayer();
     const g = state.game;
     const discarding = v.myTurn && g.phase === 'discard';
-    const reacting = Boolean(g.pending) && g.pending.target === me;
+    const responding = myResponse() !== null;
     const need = p.hand_count - 7;
     const hand = state.hand.map((c, i) => {
         const o = {};
         if (discarding) o.pick = state.picks.includes(i);
-        else if (reacting) {
-            o.react = state.parryCards.includes(i);
+        else if (responding) {
+            o.react = state.responseCards.includes(i);
             o.off = !o.react;
             o.pick = state.picks.includes(i);
         } else {
@@ -406,7 +460,7 @@ function dockHTML(v) {
         }
         return cardHTML(c, i, o);
     }).join('');
-    const canEnd = v.myTurn && g.phase === 'play' && !g.pending && !busy;
+    const canEnd = v.myTurn && g.phase === 'play' && !g.pending && !g.collective && !g.bushido && !busy;
     const roleName = state.role ? state.role.name : 'inconnu';
     return `<section class="dock${p.down ? ' is-down' : ''}${v.myTurn ? ' is-mine' : ''}" data-seat="${esc(me)}" aria-label="Votre zone de jeu">
         <div class="me">
@@ -464,6 +518,7 @@ function topbarHTML(v) {
         <div class="top-right"><span class="net net-${cls}" role="status"><i aria-hidden="true"></i>${labels[conn]}</span>
             <span class="me-top">${esc(me)}</span>
             ${v.isHost && v.started ? btn('endGame', v.ended ? 'Retour au lobby' : 'Terminer la partie', 'btn btn-small') : ''}
+            ${v.ended ? btn('openResults', 'Résultats', 'btn btn-small') : ''}
             ${btn('toggleSide', '☰ Journal', 'btn btn-small btn-ghost')}
             ${btn('logout', 'Se déconnecter', 'btn btn-small btn-ghost')}</div>
     </header>`;
@@ -505,6 +560,21 @@ function sheetHTML() {
     </section></div>`;
 }
 
+function resultsHTML(v) {
+    const g = state.game;
+    const r = g && g.results;
+    if (!v.ended || !r || ui.dismissedResults === `${g.id}:${g.turn}`) return '';
+    const camp = c => CAMP_LABEL[c] || c;
+    const rows = r.rows.map(x => `<tr><th scope="row">${esc(x.name)}${x.role.id === 'shogun' ? ' <span class="tag tag-shogun">Shogun</span>' : ''}</th><td>${esc(x.character)}</td><td>${esc(x.role.name)}</td><td>${x.honor}</td><td>×${x.mult}${x.mult_note ? ` <small class="muted">(${esc(x.mult_note)})</small>` : ''}</td><td>${x.daimyo ? `+${x.daimyo} Daimyō` : '—'}</td><td><b>${x.score}</b></td></tr>`).join('');
+    return `<div class="overlay results" role="dialog" aria-label="Résultats de la partie"><div class="overlay-box wide">
+        <p class="kicker">Fin de partie</p><h2>${r.tie ? 'Égalité entre camps' : `Victoire : ${camp(r.camps[0].camp)}`}</h2>
+        <p>${esc(r.reason)} Les rôles sont maintenant révélés.</p>
+        <div class="tablewrap"><table><thead><tr><th>Joueur</th><th>Personnage</th><th>Rôle</th><th>Honneur</th><th>Mult. (${v.count} j.)</th><th>Bonus</th><th>Score</th></tr></thead><tbody>${rows}</tbody></table></div>
+        <ul class="camps">${r.camps.map((c, i) => `<li class="${i === 0 && !r.tie ? 'win' : ''}"><span>${camp(c.camp)}</span><b>${c.total}</b></li>`).join('')}</ul>
+        <p class="note">${r.tie ? 'Pas de départage : la règle n\'est pas définie dans la spécification, à confirmer avec le livret officiel. ' : ''}Score = honneur × multiplicateur du rôle, plus 1 par Daimyō gardé en main (non multiplié, rien pour le Ronin). Non pris en compte : Lame perdue, victoire au fil de l'épée.</p>
+        <div class="prompt-actions">${v.isHost ? btn('endGame', 'Retour au lobby', 'btn btn-primary') : '<p class="note">L\'hôte peut relancer une partie.</p>'}${btn('closeResults', 'Revoir le plateau', 'btn btn-ghost')}</div></div></div>`;
+}
+
 function render() {
     const v = view();
     const focus = document.activeElement;
@@ -514,7 +584,7 @@ function render() {
     const scroll = hw ? hw.scrollLeft : 0;
     const boardTop = $('.board') ? $('.board').scrollTop : 0;
 
-    $('#app').innerHTML = topbarHTML(v) + (v.started ? gameHTML(v) : lobbyHTML(v)) + sideHTML(v) + sheetHTML();
+    $('#app').innerHTML = topbarHTML(v) + (v.started ? gameHTML(v) : lobbyHTML(v)) + sideHTML(v) + sheetHTML() + resultsHTML(v);
 
     if (fkey) {
         const f = $(fkey);
@@ -578,6 +648,20 @@ async function refreshState() {
     if (ok) applyState(data);
 }
 
+function pickTarget(name) {
+    const t = state.targets && state.targets[name];
+    if (!t) return;
+    if (!t.ok) return showToast(t.reason, 'warning');
+    ui.target = name;
+    render();
+}
+
+function playSelected(option) {
+    const body = { card: state.sel, target: ui.target || '', option };
+    clearSelection();
+    return post('/game/play', 'Impossible de jouer cette carte.', body);
+}
+
 const ACTIONS = {
     join: () => post('/game/join', 'Impossible de rejoindre le lobby.'),
     leave: () => post('/game/leave', 'Impossible de quitter le lobby.'),
@@ -592,31 +676,31 @@ const ACTIONS = {
     debugBot: () => post('/debug/bot', 'Impossible d\'ajouter un bot.'),
     debugReset: () => runAction(() => call('/debug/game', { method: 'DELETE' }, 'Mode debug indisponible.')),
     seat: d => {
-        if (state.targets && state.sel !== null) {
-            const t = state.targets[d.name];
-            if (!t) return;
-            if (!t.ok) return showToast(t.reason, 'warning');
-            ui.target = d.name;
-            return render();
-        }
+        if (state.targets && state.sel !== null) return pickTarget(d.name);
         ui.sheet = d.name;
         render();
     },
+    pickTarget: d => pickTarget(d.name),
     sheetClose: () => { ui.sheet = null; render(); },
     noop: () => {},
     tab: d => { ui.tab = d.t; render(); },
     toggleSide: () => { ui.sideOpen = !ui.sideOpen; render(); },
     cancel: () => { clearSelection(); render(); },
+    closeResults: () => { ui.dismissedResults = `${state.game.id}:${state.game.turn}`; render(); },
+    openResults: () => { ui.dismissedResults = null; render(); },
     changeTarget: () => { ui.target = null; render(); },
-    confirmAttack: () => {
-        const body = { card: state.sel, target: ui.target };
+    confirmAttack: () => playSelected(''),
+    confirmPlay: () => playSelected(''),
+    playOption: d => playSelected(d.o),
+    playCard: () => {
+        const body = { card: state.sel, target: '', option: '' };
         clearSelection();
-        return post('/game/play', 'Attaque impossible.', body);
+        return post('/game/play', 'Impossible de jouer cette carte.', body);
     },
     parry: () => {
         const body = { parry: true, card: state.picks[0] };
         state.picks = [];
-        return post('/game/respond', 'Parade impossible.', body);
+        return post('/game/respond', 'Réponse impossible.', body);
     },
     takeHit: () => {
         state.picks = [];
@@ -639,17 +723,17 @@ const ACTIONS = {
             if (k >= 0) state.picks.splice(k, 1);
             else if (state.picks.length < need) state.picks.push(i);
             else showToast(`Vous ne devez défausser que ${plural(need, 'carte', 'cartes')}.`, 'warning');
-        } else if (g.pending) {
-            if (g.pending.target !== me) return;
-            if (state.parryCards.includes(i)) state.picks = state.picks[0] === i ? [] : [i];
-            else showToast('Cette carte ne peut pas servir de parade.', 'warning');
+        } else if (g.pending || g.collective || g.bushido) {
+            if (!myResponse()) return;
+            if (state.responseCards.includes(i)) state.picks = state.picks[0] === i ? [] : [i];
+            else showToast('Cette carte ne peut pas servir pour cette réponse.', 'warning');
         } else if (state.sel === i) {
             clearSelection();
         } else {
             clearSelection();
             state.sel = i;
             const play = state.plays[i];
-            if (v.myTurn && play && play.ok && state.hand[i].category === 'arme') {
+            if (v.myTurn && play && play.ok && play.needs_target) {
                 const { ok, data } = await apiFetch(`/game/targets?card=${i}`);
                 if (ok && state.sel === i) state.targets = Object.fromEntries(data.targets.map(t => [t.name, t]));
                 else if (!ok) showToast(REASONS[data.code] || data.error || 'Cibles indisponibles.', 'error');
@@ -683,12 +767,17 @@ function handleGameUpdate(message) {
     const data = message.data || {};
     const previousHost = state.host;
     const previousActive = state.game ? state.game.active : '';
+    const hadResponse = myResponse();
     const actor = message.from;
     const byOther = actor && actor !== me;
 
     applyState(data);
     const g = state.game;
 
+    const response = myResponse();
+    if (response && !hadResponse && response !== 'attack') {
+        showToast(response === 'collective' ? `${g.collective.issuer} joue ${g.collective.card.name} : r\u00e9pondez.` : 'Code du Bushido : une d\u00e9cision est attendue.', 'warning');
+    }
     if (g && g.pending && ['attack', 'bot_action'].includes(data.event)) {
         drawBeam(g.pending.attacker, g.pending.target);
         if (g.pending.target === me) showToast(`${g.pending.attacker} vous attaque avec ${g.pending.weapon.name} !`, 'warning');
