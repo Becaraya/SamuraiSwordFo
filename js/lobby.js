@@ -16,11 +16,13 @@ const state = {
     plays: [],
     responseCards: [],
     limit: null,
+    power: null,
     targets: null,
     picks: [],
-    sel: null
+    sel: null,
+    catalog: null
 };
-const ui = { roleShown: false, sheet: null, sideOpen: false, tab: 'log', target: null, dismissedResults: null };
+const ui = { roleShown: false, sheet: null, sideOpen: false, tab: 'log', target: null, dismissedResults: null, cardDetail: null, chatDraft: '', chatSeen: 0, returnKey: null };
 
 let socket = null;
 let reconnectAttempts = 0;
@@ -47,10 +49,12 @@ const PHASES = [['recover', 'Récupération'], ['draw', 'Pioche'], ['play', 'Jeu
 const DOWN_LABEL = { hp: 'À terre : 0 PV', hand: 'À terre : aucune carte en main' };
 const ROLE_GOAL = {
     shogun: 'Camp du Shogun. Éliminer les Ninjas et le Ronin.',
-    samurai: 'Camp du Shogun. Protéger le Shogun et vaincre les Ninjas et le Ronin.',
+    samourai: 'Camp du Shogun. Protéger le Shogun et vaincre les Ninjas et le Ronin.',
     ninja: 'Camp des Ninjas. Vaincre le Shogun avant la fin de la partie.',
     ronin: 'Camp du Ronin. Rester en vie : vous gagnez seul contre tous.'
 };
+const ROLE_GLYPH = { shogun: '将', samourai: '侍', ninja: '忍', ronin: '浪' };
+const roleKind = id => id.replace(/_\d+$/, '');
 
 // ---------- Dérivation de l'état ----------
 
@@ -77,6 +81,7 @@ const shogunOf = list => list.find(p => p.role && p.role.id === 'shogun');
 const myPlayer = () => state.players[me] || null;
 
 function floatText(name, text, cls) {
+    if (reducedMotion()) return;
     const stage = $('#stage').getBoundingClientRect();
     const seat = [...document.querySelectorAll('[data-seat]')].find(n => n.dataset.seat === name);
     if (!seat) return;
@@ -94,7 +99,7 @@ function drawBeam(from, to) {
     const find = name => [...document.querySelectorAll('[data-seat]')].find(n => n.dataset.seat === name);
     const a = find(from);
     const b = find(to);
-    if (!a || !b || document.hidden) return;
+    if (!a || !b || document.hidden || reducedMotion()) return;
     const stage = $('#stage').getBoundingClientRect();
     const ra = a.getBoundingClientRect();
     const rb = b.getBoundingClientRect();
@@ -129,6 +134,7 @@ function applyState(data) {
     state.maxPlayers = data.max_players || state.maxPlayers;
     if (Array.isArray(data.connected_users)) state.connected = data.connected_users;
     state.picks = state.picks.filter(i => i < (myPlayer() ? myPlayer().hand_count : 0));
+    announceLog();
     render();
     fxDiff(before, state.players, sameGame);
     syncPrivate();
@@ -140,7 +146,7 @@ function syncPrivate() {
     if (v.started && v.isIn) return refreshPrivate();
 
     if (state.hand.length || state.role) {
-        Object.assign(state, { hand: [], role: null, plays: [], responseCards: [], limit: null, targets: null, sel: null, picks: [] });
+        Object.assign(state, { hand: [], role: null, plays: [], responseCards: [], limit: null, power: null, targets: null, sel: null, picks: [] });
         ui.target = null;
         render();
     }
@@ -155,6 +161,7 @@ async function refreshPrivate() {
     state.plays = data.plays || [];
     state.responseCards = data.response_cards || [];
     state.limit = data.weapon_limit || null;
+    state.power = data.power || null;
     if (state.sel !== null && (!state.hand[state.sel] || state.hand[state.sel].id !== previous)) clearSelection();
     state.picks = state.picks.filter(i => i < state.hand.length);
     render();
@@ -180,7 +187,7 @@ function portrait(name, letter, big) {
 const charLetter = p => (p.character ? p.character.name[0] : p.name[0].toUpperCase());
 
 function mini(card) {
-    return `<span class="mini cat-${card.category}" tabindex="0" role="img" aria-label="${esc(card.name)} (permanente) : ${esc(card.effect || '')}" title="${esc(card.name)} — ${esc(card.effect || '')}"><b>${GLYPHS[card.id] || card.name[0]}</b><em>${esc(card.name)}</em></span>`;
+    return `<span class="mini cat-${card.category}" tabindex="0" role="button" data-a="cardInfo" data-id="${esc(card.id)}" aria-label="${esc(card.name)} (permanente) : ${esc(card.effect || '')}. Ouvrir le détail" title="${esc(card.name)} — ${esc(card.effect || '')}"><b>${GLYPHS[card.id] || card.name[0]}</b><em>${esc(card.name)}</em></span>`;
 }
 
 function cardHTML(card, i, o = {}) {
@@ -224,7 +231,7 @@ function lobbySeat(pos) {
     return `<div class="seat${p.name === me ? ' is-mine' : ''}${isOnline(p.name) ? '' : ' is-offline'}" style="${style}" data-a="seat" data-name="${esc(p.name)}" data-seat="${esc(p.name)}" role="button" tabindex="0" aria-label="${esc(p.name)}">
         ${portrait(p.name, p.name[0].toUpperCase())}
         <span class="seat-body"><span class="seat-name">${esc(p.name)}${p.name === me ? ' <span class="muted">(vous)</span>' : ''}</span><span class="seat-stats">${tags}</span></span>
-        ${isOnline(p.name) ? '' : '<span class="seat-flag off">Déconnecté</span>'}
+        ${isOnline(p.name) ? '' : `<span class="seat-flag off">${p.away ? 'Déconnecté · auto' : 'Déconnecté'}</span>`}
     </div>`;
 }
 
@@ -259,7 +266,7 @@ function lobbyPrompt(v) {
 function lobbyHTML(v) {
     const seats = Array.from({ length: state.maxPlayers }, (_, i) => lobbySeat(i + 1)).join('');
     return `<main class="board"><div class="arena">
-        <section class="table" aria-label="Table du lobby">${seats}</section>
+        <section class="table" id="table" tabindex="-1" aria-label="Table du lobby">${seats}</section>
         <div class="center">${lobbyPrompt(v)}</div></div></main>`;
 }
 
@@ -291,7 +298,7 @@ function gameSeat(p, k, n) {
         </span>
         ${perms}
         ${flag}
-        ${isOnline(p.name) ? '' : '<span class="seat-flag off">Déconnecté</span>'}
+        ${isOnline(p.name) ? '' : `<span class="seat-flag off">${p.away ? 'Déconnecté · auto' : 'Déconnecté'}</span>`}
     </div>`;
 }
 
@@ -300,7 +307,7 @@ function pilesHTML() {
     const top = g.discard_top;
     return `<div class="piles">
         <div class="pile"><span class="pile-back" aria-hidden="true">刀</span><span class="pile-label">Pioche <b>${g.deck_count}</b></span></div>
-        <div class="pile"><span class="pile-top ${top ? 'cat-' + top.category : 'empty'}">${top ? `<i>${GLYPHS[top.id] || ''}</i><em>${esc(top.name)}</em>` : '<em>Vide</em>'}</span><span class="pile-label">Défausse <b>${g.discard_count}</b></span></div>
+        <div class="pile"><span class="pile-top ${top ? 'cat-' + top.category : 'empty'}" ${top ? `role="button" tabindex="0" data-a="cardInfo" data-id="${esc(top.id)}" aria-label="Carte du dessus de la défausse : ${esc(top.name)}. Ouvrir le détail"` : ''}>${top ? `<i>${GLYPHS[top.id] || ''}</i><em>${esc(top.name)}</em>` : '<em>Vide</em>'}</span><span class="pile-label">Défausse <b>${g.discard_count}</b></span></div>
     </div>`;
 }
 
@@ -318,7 +325,7 @@ function inspectorHTML() {
         <div><p class="statline">${CAT_LABEL[c.category]}</p>${stats}<p>${esc(c.effect || 'Attaque un joueur à portée.')}</p>
         ${pl.reason ? `<p class="reason"><b>Non jouable maintenant :</b> ${esc(pl.reason)}</p>` : ''}</div></div>`;
     const play = pl.ok && !pl.needs_target ? btn('playCard', c.category === 'permanente' ? 'Poser devant moi' : 'Jouer cette carte', 'btn btn-primary', busy ? 'disabled' : '') : '';
-    return box(pl.ok ? 'turn' : 'wait', 'Carte sélectionnée', esc(c.name), body, `${play}${btn('cancel', 'Désélectionner', 'btn btn-ghost')}`);
+    return box(pl.ok ? 'turn' : 'wait', 'Carte sélectionnée', esc(c.name), body, `${play}${btn('cardInfo', 'Détails', 'btn btn-ghost', `data-id="${esc(c.id)}"`)}${btn('cancel', 'Désélectionner', 'btn btn-ghost')}`);
 }
 
 // Ce que le serveur attend de moi : parade, réponse à un effet collectif ou décision du Code du Bushido.
@@ -328,6 +335,7 @@ function myResponse() {
     if (g.pending && g.pending.target === me) return 'attack';
     if (g.collective && g.collective.rows.some(r => r.name === me && r.status === 'pending')) return 'collective';
     if (g.bushido && g.bushido.player === me) return 'bushido';
+    if (g.draw_choice && g.draw_choice.player === me) return 'draw';
     return null;
 }
 
@@ -356,6 +364,35 @@ function bushidoHTML(b) {
         ${hasWeapon ? '<p class="note">Option A : sélectionnez une arme dans votre main.</p>' : '<p class="reason"><b>Option A indisponible :</b> vous n\'avez aucune arme en main.</p>'}</div></div>`;
     const actions = `${state.picks.length ? btn('parry', `A · Défausser l'arme et passer le Code à ${esc(b.next)}`, 'btn btn-primary', busy ? 'disabled' : '') : ''}${btn('takeHit', b.free ? 'B · Défausser le Code' : 'B · Perdre 1 point d\'honneur', 'btn btn-ghost', busy ? 'disabled' : '')}`;
     return box('turn', 'Récupération · Code du Bushido', 'Une décision est attendue', body, actions);
+}
+
+function drawChoiceHTML(d) {
+    if (d.player !== me) {
+        return box('wait', 'Phase de pioche', `${esc(d.player)} choisit sa pioche`, `<p>${esc(d.player)} peut prendre ${esc(d.top.name)} dans la défausse à la place de sa première carte.</p>`);
+    }
+    const body = `<div class="inspect">${bigCard(d.top)}<div><p>Ieyasu : vous pouvez prendre la carte du dessus de la défausse (<b>${esc(d.top.name)}</b>) à la place de votre première carte.</p>
+        <p class="note">Vos autres cartes (${d.count - 1}) sont piochées normalement.</p></div></div>`;
+    return box('turn', 'Phase de pioche · Ieyasu', 'Une décision est attendue', body,
+        `${btn('takeDiscard', `Prendre ${esc(d.top.name)}`, 'btn btn-primary', busy ? 'disabled' : '')}${btn('drawNormal', `Piocher ${d.count} cartes`, 'btn btn-ghost', busy ? 'disabled' : '')}`);
+}
+
+function revealHTML(v) {
+    const g = state.game;
+    if (!v.started || !v.isIn || v.ended || !state.role || sessionStorage.getItem(`katana:reveal:${g.id}:${g.round}`)) return '';
+    const p = myPlayer();
+    const kind = roleKind(state.role.id);
+    const secret = kind !== 'shogun';
+    return `<div class="overlay reveal" role="dialog" aria-modal="true" tabindex="-1" aria-label="Votre rôle et votre personnage"><div class="overlay-box wide">
+        <p class="kicker">${secret ? 'Information privée — ne la montrez à personne' : 'Votre rôle est public'}</p>
+        <h2>La partie commence</h2>
+        <div class="reveal-cards">
+            <div class="reveal-card"><span class="glyph" aria-hidden="true">${ROLE_GLYPH[kind] || '?'}</span><h3>${esc(state.role.name)}</h3><p>${esc(ROLE_GOAL[kind] || '')}</p>
+                <small class="muted">${secret ? 'Les autres joueurs ne voient pas votre rôle. Bluffer est permis.' : 'Tous les joueurs savent que vous êtes le Shogun.'}</small></div>
+            <div class="reveal-card"><span class="glyph" aria-hidden="true">${esc(p.character.name[0])}</span><h3>${esc(p.character.name)}</h3><p>${esc(p.character.ability)}</p>
+                <div class="me-stats" style="justify-content:center">${hpHTML(p)}${honorHTML(p)}</div></div>
+        </div>
+        <p class="note">Vous pourrez revoir votre rôle à tout moment avec le bouton « Rôle secret », qui se masque seul.</p>
+        <div class="prompt-actions">${btn('ackReveal', 'J\'ai compris, commencer', 'btn btn-primary', 'data-autofocus')}</div></div></div>`;
 }
 
 function targetConfirmHTML() {
@@ -416,6 +453,7 @@ function gamePrompt(v) {
     }
     if (g.collective) return collectiveHTML(g.collective);
     if (g.bushido) return bushidoHTML(g.bushido);
+    if (g.draw_choice) return drawChoiceHTML(g.draw_choice);
     if (v.myTurn && g.phase === 'discard') {
         const need = myPlayer().hand_count - 7;
         return box('turn', 'Phase de défausse', `Défaussez ${plural(need, 'carte', 'cartes')}`,
@@ -476,12 +514,13 @@ function dockHTML(v) {
                     <span class="eye" aria-hidden="true">${ui.roleShown ? '◉' : '◎'}</span>
                     ${ui.roleShown ? `Rôle secret : <b>${esc(roleName)}</b>` : 'Rôle secret masqué — afficher'}
                 </button>
-                ${ui.roleShown && state.role ? `<small>${esc(ROLE_GOAL[state.role.id] || '')}</small>` : '<small>Privé : jamais visible des autres joueurs.</small>'}
+                ${ui.roleShown && state.role ? `<small>${esc(ROLE_GOAL[roleKind(state.role.id)] || '')}</small>` : '<small>Privé : jamais visible des autres joueurs.</small>'}
             </div>
         </div>
         <div class="me-perms" aria-label="Vos permanentes"><span class="zone-title">Permanentes</span>${p.permanents.length ? p.permanents.map(mini).join('') : '<em class="muted">Aucune</em>'}</div>
-        <div class="handwrap"><div class="hand n-${Math.min(state.hand.length, 12)}" role="group" aria-label="Votre main, ${plural(state.hand.length, 'carte', 'cartes')}" style="--n:${state.hand.length}">${hand || '<em class="muted">Main vide</em>'}</div></div>
+        <div class="handwrap"><div class="hand n-${Math.min(state.hand.length, 12)}" id="hand" tabindex="-1" role="group" aria-label="Votre main, ${plural(state.hand.length, 'carte', 'cartes')}" style="--n:${state.hand.length}">${hand || '<em class="muted">Main vide</em>'}</div></div>
         <div class="me-actions">
+            ${state.power ? btn('usePower', esc(state.power.label), 'btn btn-ghost', `${state.power.ok && !busy ? '' : 'disabled'} title="${esc(state.power.reason || state.power.label)}"`) : ''}
             ${btn('endTurn', need > 0 ? `Terminer mon tour (défausse : ${need})` : 'Terminer mon tour', 'btn btn-primary btn-big', canEnd ? '' : 'disabled')}
             ${v.myTurn && g.phase === 'discard' ? '<small>Validez la défausse pour passer le tour.</small>' : ''}
         </div>
@@ -495,7 +534,7 @@ function gameHTML(v) {
     const order = v.spectator ? v.list : v.list.slice(myIndex + 1).concat(v.list.slice(0, myIndex));
     const seats = order.map((p, idx) => gameSeat(p, v.spectator ? idx : idx + 1, n)).join('');
     return `<main class="board"><div class="arena">
-        <section class="table" aria-label="Table de jeu">${seats}</section>
+        <section class="table" id="table" tabindex="-1" aria-label="Table de jeu">${seats}</section>
         <div class="center">${pilesHTML()}${gamePrompt(v)}</div></div>${dockHTML(v)}</main>`;
 }
 
@@ -514,6 +553,7 @@ function topbarHTML(v) {
     else turn = '<div class="turn"><span class="turn-who">Salle d\'attente</span></div>';
 
     return `<header class="topbar">
+        <nav class="skip" aria-label="Accès rapide"><a href="#table">Table</a><a href="#hand">Ma main</a><a href="#panel">Panneau</a></nav>
         <div class="brand">KATANA<small>${v.started ? `tour ${g.turn}` : 'lobby'}</small></div>${turn}
         <div class="top-right"><span class="net net-${cls}" role="status"><i aria-hidden="true"></i>${labels[conn]}</span>
             <span class="me-top">${esc(me)}</span>
@@ -525,14 +565,19 @@ function topbarHTML(v) {
 }
 
 function sideHTML(v) {
-    const tabs = [['log', v.started ? 'Journal' : 'Joueurs'], ['help', 'Aide']];
+    const chatCount = ((state.game && state.game.chat) || []).length;
+    if (ui.tab === 'chat') ui.chatSeen = chatCount;
+    const unread = ui.tab === 'chat' ? 0 : Math.max(0, chatCount - ui.chatSeen);
+    const tabs = [['log', v.started ? 'Journal' : 'Joueurs'], ['help', 'Aide'], ['cards', 'Cartes'], ['chat', 'Chat'], ['prefs', 'Réglages']];
     let body;
     if (ui.tab === 'help') {
-        body = `<div class="help">
-            <details open><summary>Phases d'un tour</summary><p>Récupération et pioche sont automatiques. Pendant la phase de jeu vous jouez vos cartes, puis vous terminez votre tour (défausse obligatoire au-delà de 7 cartes).</p></details>
-            <details><summary>Que signifie être « à terre » ?</summary><p>0 PV ou aucune carte en main. Le joueur n'est pas éliminé : il ne peut pas être ciblé par une arme et revient en jeu dès que ses conditions sont réunies.</p></details>
-            <details><summary>PV ou honneur ?</summary><p>Les PV (cœurs ♥ rouges) sont votre santé. L'honneur (sceaux dorés 誉) détermine la victoire.</p></details>
-            <details><summary>Qui est observateur ?</summary><p>Tout joueur connecté qui n'est pas dans la partie. Il ne voit jamais les rôles cachés ni les mains.</p></details></div>`;
+        body = helpHTML(v);
+    } else if (ui.tab === 'cards') {
+        body = catalogHTML();
+    } else if (ui.tab === 'chat') {
+        body = chatHTML(v);
+    } else if (ui.tab === 'prefs') {
+        body = settingsHTML();
     } else if (v.started) {
         body = `<ol class="log" aria-label="Journal des événements">${(state.game.log || []).slice().reverse().map(l => `<li class="l-${l.kind}"><span class="lk">${{ info: 'Info', action: 'Action', important: 'Important' }[l.kind]}</span>${esc(l.text)}</li>`).join('') || '<li class="muted">Aucun événement.</li>'}</ol>`;
     } else {
@@ -542,8 +587,8 @@ function sideHTML(v) {
             ${p.name === state.host || p.ready ? '<span class="tag tag-ready">Prêt</span>' : '<span class="tag tag-wait">En attente</span>'}</li>`).join('') || '<li class="empty">Personne dans le lobby.</li>'}</ul>
             <h3>Observateurs <span class="badge">${spectators.length}</span></h3><ul class="plist">${spectators.map(n => `<li><span class="dot"></span><span class="pname">${esc(n)}</span>${n === me ? '<span class="tag tag-turn">Vous</span>' : ''}</li>`).join('') || '<li class="empty">Personne.</li>'}</ul>`;
     }
-    return `<aside class="side${ui.sideOpen ? ' open' : ''}" aria-label="Panneau latéral">
-        <div class="tabs" role="tablist">${tabs.map(t => `<button role="tab" aria-selected="${ui.tab === t[0]}" data-a="tab" data-t="${t[0]}">${t[1]}</button>`).join('')}<button class="close-side" data-a="toggleSide" aria-label="Fermer le panneau">✕</button></div>
+    return `<aside class="side${ui.sideOpen ? ' open' : ''}" id="panel" tabindex="-1" aria-label="Panneau latéral">
+        <div class="tabs" role="tablist">${tabs.map(t => `<button role="tab" aria-selected="${ui.tab === t[0]}" data-a="tab" data-t="${t[0]}">${t[1]}${t[0] === 'chat' && unread ? ` <span class="badge" aria-label="${unread} message(s) non lu(s)">${unread}</span>` : ''}</button>`).join('')}<button class="close-side" data-a="toggleSide" aria-label="Fermer le panneau">✕</button></div>
         <div class="tabbody">${body}</div></aside>`;
 }
 
@@ -551,8 +596,8 @@ function sheetHTML() {
     if (!ui.sheet || !state.players[ui.sheet]) return '';
     const p = state.players[ui.sheet];
     if (!p.character) return '';
-    return `<div class="sheet-back" data-a="sheetClose"><section class="sheet" role="dialog" aria-label="Détail de ${esc(p.name)}" data-a="noop">
-        <header>${portrait(p.name, charLetter(p), true)}<div><h2>${esc(p.name)}${p.role ? ` <span class="tag tag-shogun">${esc(p.role.name)}</span>` : ''}</h2><p>${esc(p.character.name)}</p></div><button class="x" data-a="sheetClose" aria-label="Fermer">✕</button></header>
+    return `<div class="sheet-back" data-a="sheetClose"><section class="sheet" role="dialog" aria-modal="true" tabindex="-1" aria-label="Détail de ${esc(p.name)}" data-a="noop">
+        <header>${portrait(p.name, charLetter(p), true)}<div><h2>${esc(p.name)}${p.role ? ` <span class="tag tag-shogun">${esc(p.role.name)}</span>` : ''}</h2><p>${esc(p.character.name)}</p></div><button class="x" data-a="sheetClose" data-autofocus aria-label="Fermer">✕</button></header>
         <p class="ability">${esc(p.character.ability)}</p>
         <div class="me-stats">${hpHTML(p)}${honorHTML(p)}<span class="stat hand"><b>${p.hand_count}</b> cartes en main</span></div>
         ${p.down ? `<p class="seat-flag down">${DOWN_LABEL[p.down]} — pas éliminé·e : peut revenir en jeu.</p>` : ''}
@@ -566,30 +611,37 @@ function resultsHTML(v) {
     if (!v.ended || !r || ui.dismissedResults === `${g.id}:${g.turn}`) return '';
     const camp = c => CAMP_LABEL[c] || c;
     const rows = r.rows.map(x => `<tr><th scope="row">${esc(x.name)}${x.role.id === 'shogun' ? ' <span class="tag tag-shogun">Shogun</span>' : ''}</th><td>${esc(x.character)}</td><td>${esc(x.role.name)}</td><td>${x.honor}</td><td>×${x.mult}${x.mult_note ? ` <small class="muted">(${esc(x.mult_note)})</small>` : ''}</td><td>${x.daimyo ? `+${x.daimyo} Daimyō` : '—'}</td><td><b>${x.score}</b></td></tr>`).join('');
-    return `<div class="overlay results" role="dialog" aria-label="Résultats de la partie"><div class="overlay-box wide">
-        <p class="kicker">Fin de partie</p><h2>${r.tie ? 'Égalité entre camps' : `Victoire : ${camp(r.camps[0].camp)}`}</h2>
+    return `<div class="overlay results" role="dialog" aria-modal="true" tabindex="-1" aria-label="Résultats de la partie"><div class="overlay-box wide">
+        <p class="kicker">Fin de partie</p><h2>Victoire : ${camp(r.winner)}${r.victory === 'epee' ? ' <small>(au fil de l\'épée)</small>' : ''}</h2>
         <p>${esc(r.reason)} Les rôles sont maintenant révélés.</p>
         <div class="tablewrap"><table><thead><tr><th>Joueur</th><th>Personnage</th><th>Rôle</th><th>Honneur</th><th>Mult. (${v.count} j.)</th><th>Bonus</th><th>Score</th></tr></thead><tbody>${rows}</tbody></table></div>
-        <ul class="camps">${r.camps.map((c, i) => `<li class="${i === 0 && !r.tie ? 'win' : ''}"><span>${camp(c.camp)}</span><b>${c.total}</b></li>`).join('')}</ul>
-        <p class="note">${r.tie ? 'Pas de départage : la règle n\'est pas définie dans la spécification, à confirmer avec le livret officiel. ' : ''}Score = honneur × multiplicateur du rôle, plus 1 par Daimyō gardé en main (non multiplié, rien pour le Ronin). Non pris en compte : Lame perdue, victoire au fil de l'épée.</p>
-        <div class="prompt-actions">${v.isHost ? btn('endGame', 'Retour au lobby', 'btn btn-primary') : '<p class="note">L\'hôte peut relancer une partie.</p>'}${btn('closeResults', 'Revoir le plateau', 'btn btn-ghost')}</div></div></div>`;
+        <ul class="camps">${r.camps.map(c => `<li class="${c.camp === r.winner ? 'win' : ''}"><span>${camp(c.camp)}${c.penalty ? ` <small class="muted">(Lame perdue −${c.penalty})</small>` : ''}</span><b>${c.total}</b></li>`).join('')}</ul>
+        <p class="note">${r.note ? `${esc(r.note)} ` : ''}Score = honneur × multiplicateur du rôle, plus 1 par Daimyō gardé en main (non multiplié, rien pour le Ronin).</p>
+        <div class="prompt-actions">${v.isHost ? btn('endGame', 'Retour au lobby', 'btn btn-primary') : '<p class="note">L\'hôte peut relancer une partie.</p>'}${btn('closeResults', 'Revoir le plateau', 'btn btn-ghost', 'data-autofocus')}</div></div></div>`;
 }
 
 function render() {
     const v = view();
     const focus = document.activeElement;
-    const fkey = focus && focus.dataset && focus.dataset.a
-        ? `[data-a="${focus.dataset.a}"]${focus.dataset.i !== undefined ? `[data-i="${focus.dataset.i}"]` : ''}${focus.dataset.t ? `[data-t="${focus.dataset.t}"]` : ''}` : null;
+    const fkey = focusKey(focus);
+    const typing = focus && focus.matches && focus.matches('input');
+    const caret = typing ? focus.selectionStart : null;
     const hw = $('.handwrap');
     const scroll = hw ? hw.scrollLeft : 0;
     const boardTop = $('.board') ? $('.board').scrollTop : 0;
 
-    $('#app').innerHTML = topbarHTML(v) + (v.started ? gameHTML(v) : lobbyHTML(v)) + sideHTML(v) + sheetHTML() + resultsHTML(v);
+    $('#app').innerHTML = topbarHTML(v) + (v.started ? gameHTML(v) : lobbyHTML(v)) + sideHTML(v) + sheetHTML() + cardDetailHTML() + resultsHTML(v) + revealHTML(v);
 
     if (fkey) {
         const f = $(fkey);
-        if (f) f.focus({ preventScroll: true });
+        if (f) {
+            f.focus({ preventScroll: true });
+            if (typing && caret !== null) f.setSelectionRange(caret, caret);
+        }
     }
+    manageDialogFocus();
+    const chatLog = $('.chat-log');
+    if (chatLog) chatLog.scrollTop = chatLog.scrollHeight;
     if ($('.handwrap')) $('.handwrap').scrollLeft = scroll;
     if ($('.board')) $('.board').scrollTop = boardTop;
 }
@@ -657,7 +709,7 @@ function pickTarget(name) {
 }
 
 function playSelected(option) {
-    const body = { card: state.sel, target: ui.target || '', option };
+    const body = { card: state.sel, card_id: state.hand[state.sel].id, target: ui.target || '', option };
     clearSelection();
     return post('/game/play', 'Impossible de jouer cette carte.', body);
 }
@@ -677,28 +729,56 @@ const ACTIONS = {
     debugReset: () => runAction(() => call('/debug/game', { method: 'DELETE' }, 'Mode debug indisponible.')),
     seat: d => {
         if (state.targets && state.sel !== null) return pickTarget(d.name);
+        ui.returnKey = focusKey(document.activeElement);
         ui.sheet = d.name;
         render();
     },
     pickTarget: d => pickTarget(d.name),
     sheetClose: () => { ui.sheet = null; render(); },
+    cardInfo: d => {
+        const c = findCard(d.id);
+        if (!c) return;
+        if (!ui.sheet) ui.returnKey = focusKey(document.activeElement);
+        ui.cardDetail = c;
+        loadCatalog();
+        render();
+    },
+    cardClose: () => { ui.cardDetail = null; render(); },
+    pref: d => { savePref(d.k, !prefs[d.k]); render(); },
+    chatInput: () => {},
     noop: () => {},
-    tab: d => { ui.tab = d.t; render(); },
+    tab: d => {
+        ui.tab = d.t;
+        if (d.t === 'cards') loadCatalog();
+        render();
+    },
     toggleSide: () => { ui.sideOpen = !ui.sideOpen; render(); },
     cancel: () => { clearSelection(); render(); },
+    ackReveal: () => {
+        const g = state.game;
+        sessionStorage.setItem(`katana:reveal:${g.id}:${g.round}`, '1');
+        render();
+    },
+    takeDiscard: () => post('/game/respond', 'Pioche impossible.', { parry: true, card: 0 }),
+    drawNormal: () => post('/game/respond', 'Pioche impossible.', { parry: false, card: 0 }),
+    usePower: () => post('/game/power', 'Pouvoir indisponible.', { power: state.power.id }),
     closeResults: () => { ui.dismissedResults = `${state.game.id}:${state.game.turn}`; render(); },
-    openResults: () => { ui.dismissedResults = null; render(); },
+    openResults: () => {
+        ui.returnKey = focusKey(document.activeElement);
+        ui.dismissedResults = null;
+        render();
+    },
     changeTarget: () => { ui.target = null; render(); },
     confirmAttack: () => playSelected(''),
     confirmPlay: () => playSelected(''),
     playOption: d => playSelected(d.o),
     playCard: () => {
-        const body = { card: state.sel, target: '', option: '' };
+        const body = { card: state.sel, card_id: state.hand[state.sel].id, target: '', option: '' };
         clearSelection();
         return post('/game/play', 'Impossible de jouer cette carte.', body);
     },
     parry: () => {
-        const body = { parry: true, card: state.picks[0] };
+        const body = { parry: true, card: state.picks[0], card_id: (state.hand[state.picks[0]] || {}).id };
         state.picks = [];
         return post('/game/respond', 'Réponse impossible.', body);
     },
@@ -751,13 +831,36 @@ document.addEventListener('click', e => {
 });
 
 document.addEventListener('keydown', e => {
+    if (trapTab(e) || arrowNav(e)) return;
     if (e.key === 'Escape') {
+        if (ui.cardDetail) { ui.cardDetail = null; return render(); }
         if (ui.sheet) { ui.sheet = null; return render(); }
+        if (document.querySelector('.results') && state.game) { ui.dismissedResults = `${state.game.id}:${state.game.turn}`; return render(); }
         if (state.sel !== null) { clearSelection(); return render(); }
+    }
+    if ((e.key === 'i' || e.key === 'I') && e.target.matches('.card') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const c = state.hand[+e.target.dataset.i];
+        if (c) {
+            ui.returnKey = focusKey(e.target);
+            ui.cardDetail = c;
+            loadCatalog();
+            return render();
+        }
     }
     if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[role="button"][data-a]')) {
         e.preventDefault();
         e.target.click();
+    }
+});
+
+document.addEventListener('input', e => {
+    if (e.target.dataset && e.target.dataset.a === 'chatInput') ui.chatDraft = e.target.value;
+});
+
+document.addEventListener('submit', e => {
+    if (e.target.dataset && e.target.dataset.form === 'chat') {
+        e.preventDefault();
+        sendChat();
     }
 });
 
@@ -776,26 +879,38 @@ function handleGameUpdate(message) {
 
     const response = myResponse();
     if (response && !hadResponse && response !== 'attack') {
-        showToast(response === 'collective' ? `${g.collective.issuer} joue ${g.collective.card.name} : r\u00e9pondez.` : 'Code du Bushido : une d\u00e9cision est attendue.', 'warning');
+        showToast(response === 'collective' ? `${g.collective.issuer} joue ${g.collective.card.name} : r\u00e9pondez.` : response === 'draw' ? 'Phase de pioche : choisissez la défausse ou la pioche.' : 'Code du Bushido : une d\u00e9cision est attendue.', 'warning');
     }
     if (g && g.pending && ['attack', 'bot_action'].includes(data.event)) {
         drawBeam(g.pending.attacker, g.pending.target);
         if (g.pending.target === me) showToast(`${g.pending.attacker} vous attaque avec ${g.pending.weapon.name} !`, 'warning');
     }
-    if (g && g.state === 'STARTED' && g.active === me && previousActive !== me) showToast('C\'est à vous de jouer.', 'success');
+    if (g && g.state === 'STARTED' && g.active === me && previousActive !== me) notify('C\'est à vous de jouer.', 'success', 'game');
 
     switch (data.event) {
         case 'player_joined':
-            if (byOther && !isBot(actor)) showToast(`${actor} a rejoint le lobby.`, 'info');
+            if (byOther && !isBot(actor)) notify(`${actor} a rejoint le lobby.`, 'info', 'lobby');
             break;
         case 'player_left':
-            if (byOther) showToast(`${actor} a quitté le lobby.`, 'warning');
+            if (byOther) notify(`${actor} a quitté le lobby.`, 'warning', 'lobby');
             break;
         case 'game_started':
-            showToast('La partie commence !', 'success');
+            notify('La partie commence !', 'success', 'game');
             break;
         case 'game_ended':
-            showToast('La partie est terminée.', 'info');
+            notify('La partie est terminée.', 'info', 'game');
+            break;
+        case 'chat':
+            if (byOther) notify(`${actor} : ${((g && g.chat) || []).slice(-1)[0].text}`, 'info', 'chat');
+            break;
+        case 'player_away':
+            if (byOther) notify(`${actor} est déconnecté·e : le serveur joue à sa place.`, 'warning', 'game');
+            break;
+        case 'player_back':
+            if (byOther) notify(`${actor} est de retour.`, 'info', 'game');
+            break;
+        case 'game_abandoned':
+            notify('La partie a été abandonnée (plus aucun joueur connecté).', 'warning', 'game');
             break;
     }
     if (state.host === me && previousHost && previousHost !== me) {
@@ -852,6 +967,7 @@ if (!Session.isValid()) {
     Session.clear();
     window.location.replace('login.html');
 } else {
+    applyPrefs();
     render();
     document.addEventListener('visibilitychange', () => {
         if (!document.hidden) refreshState();
