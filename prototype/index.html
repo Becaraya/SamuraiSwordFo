@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Katana — Prototype UX</title>
+    <link rel="stylesheet" href="prototype.css?v=20261027151700">
+</head>
+<body>
+    <!-- Barre d'outils de simulation (hors produit) -->
+    <div class="devbar" role="toolbar" aria-label="Simulation du prototype">
+        <strong>Prototype UX</strong>
+        <label>Situation
+            <select id="scenario">
+                <option value="attack">A/B/C/D/F · Mon tour, 7 joueurs (attaque, cibles, parade)</option>
+                <option value="defend">B/I · Je suis attaqué (réaction hors tour)</option>
+                <option value="collective">E · Cri de guerre (réaction collective)</option>
+                <option value="discard">Fin de tour : défausse obligatoire (9 cartes)</option>
+                <option value="reconnect">I · Reconnexion pendant une attaque</option>
+                <option value="deck">G → H · Pioche épuisée puis fin de partie</option>
+                <option value="end">H · Résultats de partie</option>
+                <option value="three">K · Partie à 3 joueurs (Shogun)</option>
+                <option value="bushido_weapon">Code du Bushido · carte révélée = arme (choix)</option>
+                <option value="bushido_none">Code du Bushido · carte révélée = pas une arme (auto)</option>
+                <option value="spectator">L · Spectateur</option>
+            </select>
+        </label>
+        <label>Écran
+            <select id="device">
+                <option value="desktop">Desktop (fluide)</option>
+                <option value="1366">Laptop 1366 × 768</option>
+                <option value="1024">Tablette 1024 × 768</option>
+                <option value="390">Mobile 390 × 844</option>
+                <option value="360">Mobile compact 360 × 780</option>
+            </select>
+        </label>
+        <label>Défenseur simulé
+            <select id="simDefender">
+                <option value="parry">pare l'attaque</option>
+                <option value="hit">ne pare pas</option>
+            </select>
+        </label>
+        <label><input type="checkbox" id="simReject"> Le serveur refuse la prochaine action</label>
+        <button type="button" id="resetBtn">Réinitialiser</button>
+    </div>
+
+    <div id="deviceFrame" class="device">
+        <div id="stage" class="stage">
+            <div class="app" id="app"></div>
+            <div class="fx" id="fx" aria-hidden="true"></div>
+            <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+        </div>
+    </div>
+
+    <script src="data.js?v=20261027151700"></script>
+    <script src="engine.js?v=20261027151700"></script>
+    <script src="app.js?v=20261027151700"></script>
+</body>
+</html>

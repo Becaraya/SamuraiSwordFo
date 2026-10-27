@@ -3,96 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Katana - Lobby</title>
-    <link rel="stylesheet" href="css/styles.css">
+    <title>Katana</title>
+    <link rel="stylesheet" href="css/katana.css">
 </head>
-<body class="page-lobby">
-    <header class="topbar">
-        <div class="brand">KATANA</div>
-        <div class="topbar-right">
-            <span class="conn conn-connecting" id="connStatus" title="État de la connexion temps réel">
-                <i></i><span id="connLabel">Connexion…</span>
-            </span>
-            <span class="me" id="meName"></span>
-            <button type="button" class="btn btn-danger btn-small" id="endBtn" hidden>Terminer la partie</button>
-            <button type="button" class="btn btn-ghost btn-small" id="logoutBtn">Se déconnecter</button>
-        </div>
-    </header>
-
-    <main class="game" id="gameView" hidden>
-        <section class="board" aria-label="Plateau de jeu">
-            <div class="opponents" id="opponents"></div>
-
-            <div class="felt">
-                <div class="shogun-slot" id="shogunSlot">
-                    <span class="pile-label">Shogun</span>
-                    <div class="shogun-card" id="shogunCard"></div>
-                    <span class="shogun-name" id="shogunName"></span>
-                </div>
-                <div class="pile" id="deckPile">
-                    <div class="pile-card" id="deckCard"></div>
-                    <span class="pile-label">Pioche <b id="deckCount">0</b></span>
-                </div>
-                <div class="pile" id="discardPile">
-                    <div class="pile-card" id="discardCard"></div>
-                    <span class="pile-label">Défausse <b id="discardCount">0</b></span>
-                </div>
-            </div>
-
-            <div class="mine-zone" id="mineZone">
-                <div class="mine-character" id="mineCharacter"></div>
-                <div class="mine-info">
-                    <div class="mine-head">
-                        <span class="mine-name" id="mineName"></span>
-                        <span class="life-slot" id="mineLife"></span>
-                    </div>
-                    <div class="zone-title">Rôle</div>
-                    <div class="cards cards-small mine-role" id="mineRole"></div>
-                    <div class="zone-title">Permanents</div>
-                    <div class="cards cards-small" id="minePermanents"></div>
-                </div>
-                <div class="mine-hand">
-                    <div class="zone-title">Votre main <span class="badge" id="handCount">0</span></div>
-                    <div class="cards" id="mineHand"></div>
-                </div>
-            </div>
-        </section>
-    </main>
-
-    <main class="lobby" id="lobbyView">
-        <section class="table-card" aria-label="Table de jeu">
-            <div class="table" id="table">
-                <div class="table-center">
-                    <div class="phase" id="phase">Salle d'attente</div>
-                    <div class="count"><span id="count">0</span><small> / <span id="maxCount">7</span> joueurs</small></div>
-                    <div class="progress" aria-hidden="true">
-                        <div class="progress-bar" id="progressBar"></div>
-                        <div class="progress-min" id="progressMin"></div>
-                    </div>
-                    <p class="hint" id="hint"></p>
-                    <div class="actions">
-                        <button type="button" class="btn btn-primary" id="joinBtn">Rejoindre</button>
-                        <button type="button" class="btn btn-danger" id="startBtn" hidden>Lancer la partie</button>
-                        <button type="button" class="btn btn-ghost btn-small" id="debugBtn" hidden title="Mode debug : partie fictive avec bots">Partie de test</button>
-                        <button type="button" class="btn btn-ghost btn-small" id="debugStartBtn" hidden title="Mode debug : partie fictive déjà lancée">Test lancée</button>
-                        <button type="button" class="btn btn-ghost btn-small" id="debugBotBtn" hidden title="Mode debug : ajouter un bot à la partie">+ Bot</button>
-                        <button type="button" class="btn btn-ghost btn-small" id="debugResetBtn" hidden title="Mode debug : supprimer la partie">Reset</button>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <aside class="side">
-            <section class="panel">
-                <h2>Joueurs <span class="badge" id="playersCount">0</span></h2>
-                <ul class="list" id="playersList"></ul>
-            </section>
-            <section class="panel">
-                <h2>En ligne <span class="badge" id="onlineCount">0</span></h2>
-                <ul class="list" id="onlineList"></ul>
-            </section>
-        </aside>
-    </main>
+<body>
+    <div class="stage" id="stage">
+        <div class="app" id="app"></div>
+        <div class="fx" id="fx" aria-hidden="true"></div>
+        <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+    </div>
 
     <script src="js/config.js"></script>
     <script src="js/common.js"></script>
