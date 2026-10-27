@@ -13,11 +13,14 @@ const state = {
     connected: [],
     hand: [],
     role: null,
-    log: [],
+    plays: [],
+    parryCards: [],
+    limit: null,
+    targets: null,
     picks: [],
     sel: null
 };
-const ui = { roleShown: false, sheet: null, sideOpen: false, tab: 'log' };
+const ui = { roleShown: false, sheet: null, sideOpen: false, tab: 'log', target: null };
 
 let socket = null;
 let reconnectAttempts = 0;
@@ -25,7 +28,6 @@ let reconnectTimer = null;
 let leavingPage = false;
 let busy = false;
 let conn = 'connecting';
-let privateKey = '';
 let roleTimer = null;
 
 const $ = s => document.querySelector(s);
@@ -73,12 +75,52 @@ const playerAt = pos => Object.values(state.players).find(p => p.position === po
 const shogunOf = list => list.find(p => p.role && p.role.id === 'shogun');
 const myPlayer = () => state.players[me] || null;
 
-function logEvent(kind, text) {
-    state.log.unshift({ kind, text });
-    state.log.length = Math.min(state.log.length, 60);
+function floatText(name, text, cls) {
+    const stage = $('#stage').getBoundingClientRect();
+    const seat = [...document.querySelectorAll('[data-seat]')].find(n => n.dataset.seat === name);
+    if (!seat) return;
+    const r = seat.getBoundingClientRect();
+    const n = document.createElement('div');
+    n.className = `float ${cls}`;
+    n.textContent = text;
+    n.style.left = `${r.left - stage.left + r.width / 2}px`;
+    n.style.top = `${r.top - stage.top + r.height / 2}px`;
+    $('#fx').append(n);
+    setTimeout(() => n.remove(), 1500);
+}
+
+function drawBeam(from, to) {
+    const find = name => [...document.querySelectorAll('[data-seat]')].find(n => n.dataset.seat === name);
+    const a = find(from);
+    const b = find(to);
+    if (!a || !b || document.hidden) return;
+    const stage = $('#stage').getBoundingClientRect();
+    const ra = a.getBoundingClientRect();
+    const rb = b.getBoundingClientRect();
+    const [x1, y1] = [ra.left - stage.left + ra.width / 2, ra.top - stage.top + ra.height / 2];
+    const [x2, y2] = [rb.left - stage.left + rb.width / 2, rb.top - stage.top + rb.height / 2];
+    const n = document.createElement('i');
+    n.className = 'beam';
+    n.style.cssText = `left:${x1}px;top:${y1}px;width:${Math.hypot(x2 - x1, y2 - y1)}px;transform:rotate(${Math.atan2(y2 - y1, x2 - x1)}rad)`;
+    $('#fx').append(n);
+    setTimeout(() => n.remove(), 700);
+}
+
+// Indicateurs discrets des variations de PV et d'honneur entre deux états de la même partie.
+function fxDiff(before, after, sameGame) {
+    if (!sameGame || document.hidden) return;
+    for (const [name, p] of Object.entries(after)) {
+        const old = before[name];
+        if (!old || !old.character || !p.character) continue;
+        if (p.life < old.life) floatText(name, `−${old.life - p.life} PV`, 'f-hp');
+        if (p.life > old.life) floatText(name, `+${p.life - old.life} PV`, 'f-parry');
+        if (p.honor !== old.honor) floatText(name, `${p.honor > old.honor ? '+' : '−'}${Math.abs(p.honor - old.honor)} honneur`, 'f-honor');
+    }
 }
 
 function applyState(data) {
+    const before = state.players;
+    const sameGame = Boolean(state.game && data.game && state.game.id === data.game.id && state.game.state !== 'WAITING');
     state.game = data.game || null;
     state.players = data.players || {};
     state.host = data.host || '';
@@ -87,40 +129,40 @@ function applyState(data) {
     if (Array.isArray(data.connected_users)) state.connected = data.connected_users;
     state.picks = state.picks.filter(i => i < (myPlayer() ? myPlayer().hand_count : 0));
     render();
+    fxDiff(before, state.players, sameGame);
     syncPrivate();
 }
 
-// La main et le rôle secret sont privés : récupérés à part quand l'état de la partie change.
+// La main, le rôle secret et les actions possibles sont privés : récupérés à part après chaque changement d'état.
 function syncPrivate() {
     const v = view();
-    const key = v.started && v.isIn
-        ? `${state.game.id}:${state.game.turn}:${state.game.phase}:${myPlayer().hand_count}:${state.game.discard_count}`
-        : '';
-    if (key === privateKey) return;
-    privateKey = key;
+    if (v.started && v.isIn) return refreshPrivate();
 
-    if (!key) {
-        state.hand = [];
-        state.role = null;
-        state.sel = null;
-        state.picks = [];
+    if (state.hand.length || state.role) {
+        Object.assign(state, { hand: [], role: null, plays: [], parryCards: [], limit: null, targets: null, sel: null, picks: [] });
+        ui.target = null;
         render();
-        return;
     }
-    refreshPrivate();
 }
 
 async function refreshPrivate() {
     const { ok, data } = await apiFetch('/game/me');
-    if (!ok) {
-        privateKey = '';
-        return;
-    }
+    if (!ok) return;
+    const previous = state.sel !== null && state.hand[state.sel] ? state.hand[state.sel].id : null;
     state.hand = data.hand || [];
     state.role = data.role || null;
-    state.sel = null;
-    state.picks = [];
+    state.plays = data.plays || [];
+    state.parryCards = data.parry_cards || [];
+    state.limit = data.weapon_limit || null;
+    if (state.sel !== null && (!state.hand[state.sel] || state.hand[state.sel].id !== previous)) clearSelection();
+    state.picks = state.picks.filter(i => i < state.hand.length);
     render();
+}
+
+function clearSelection() {
+    state.sel = null;
+    state.targets = null;
+    ui.target = null;
 }
 
 // ---------- Composants ----------
@@ -144,6 +186,8 @@ function cardHTML(card, i, o = {}) {
     const cls = ['card', `cat-${card.category}`];
     if (o.selected) cls.push('selected');
     if (o.pick) cls.push('pick');
+    if (o.off) cls.push('unplayable');
+    if (o.react) cls.push('react-ok');
     const stats = card.category === 'arme' ? `<span class="c-stats"><b>Préc. ${card.precision}</b><b>Dég. ${card.damage}</b></span>` : '';
     return `<button type="button" class="${cls.join(' ')}" data-a="card" data-i="${i}" style="--i:${i}" aria-pressed="${Boolean(o.selected || o.pick)}" aria-label="${esc(card.name)}, ${CAT_LABEL[card.category]}">
         <span class="c-cat">${CAT_LABEL[card.category]}</span><span class="c-art" aria-hidden="true">${GLYPHS[card.id] || esc(card.name[0])}</span><span class="c-name">${esc(card.name)}</span>${stats}
@@ -227,6 +271,12 @@ function gameSeat(p, k, n) {
     if (p.role && p.role.id === 'shogun') cls.push('is-shogun');
     if (p.down) cls.push('is-down');
     if (!isOnline(p.name)) cls.push('is-offline');
+    const T = state.targets && state.targets[p.name];
+    if (T) cls.push(T.ok ? 'targetable' : 'untargetable');
+    if (ui.target === p.name || (g.pending && g.pending.target === p.name)) cls.push('is-target');
+    if (g.pending && g.pending.attacker === p.name) cls.push('is-attacker');
+    const flag = T ? `<span class="seat-flag ${T.ok ? 'ok' : 'no'}">${T.ok ? '◎' : '⊘'} ${esc(T.short)}</span>`
+        : p.down ? `<span class="seat-flag down">${DOWN_LABEL[p.down]}</span>` : '';
     const perms = p.permanents && p.permanents.length ? `<span class="seat-perms">${p.permanents.map(mini).join('')}</span>` : '';
     const roleTag = p.role ? `<span class="tag ${p.role.id === 'shogun' ? 'tag-shogun' : 'tag-role'}">${esc(p.role.name)}</span>` : '';
     const turnTag = g.state === 'STARTED' && g.active === p.name ? '<span class="tag tag-turn">Son tour</span>' : '';
@@ -239,7 +289,7 @@ function gameSeat(p, k, n) {
             <span class="seat-stats">${hpHTML(p)}${honorHTML(p)}<span class="stat hand" title="Cartes en main"><i aria-hidden="true">🂠</i><b>${p.hand_count}</b><span class="sr"> cartes en main</span></span></span>
         </span>
         ${perms}
-        ${p.down ? `<span class="seat-flag down">${DOWN_LABEL[p.down]}</span>` : ''}
+        ${flag}
         ${isOnline(p.name) ? '' : '<span class="seat-flag off">Déconnecté</span>'}
     </div>`;
 }
@@ -253,21 +303,62 @@ function pilesHTML() {
     </div>`;
 }
 
+const calcParts = list => `<ul class="calc">${list.map((x, i) => `<li><span>${esc(x.label)}</span><b>${x.value > 0 && i > 0 ? '+' : ''}${x.value}</b></li>`).join('')}</ul>`;
+
+function bigCard(c) {
+    return `<div class="bigcard cat-${c.category}"><span class="c-cat">${CAT_LABEL[c.category]}</span><span class="c-art">${GLYPHS[c.id] || ''}</span><span class="c-name">${esc(c.name)}</span></div>`;
+}
+
 function inspectorHTML() {
     const c = state.hand[state.sel];
+    const pl = state.plays[state.sel] || {};
     const stats = c.category === 'arme' ? `<p class="statline">Précision <b>${c.precision}</b> · Dégâts <b>${c.damage}</b></p>` : '';
-    const body = `<div class="inspect"><div class="bigcard cat-${c.category}"><span class="c-cat">${CAT_LABEL[c.category]}</span><span class="c-art">${GLYPHS[c.id] || ''}</span><span class="c-name">${esc(c.name)}</span></div>
+    const body = `<div class="inspect">${bigCard(c)}
         <div><p class="statline">${CAT_LABEL[c.category]}</p>${stats}<p>${esc(c.effect || 'Attaque un joueur à portée.')}</p>
-        <p class="reason"><b>Pas encore jouable :</b> le jeu des cartes n'est pas encore branché sur le serveur.</p></div></div>`;
-    return box('wait', 'Carte sélectionnée', esc(c.name), body, btn('cancel', 'Désélectionner', 'btn btn-ghost'));
+        ${pl.reason ? `<p class="reason"><b>Non jouable maintenant :</b> ${esc(pl.reason)}</p>` : ''}</div></div>`;
+    return box(pl.ok ? 'turn' : 'wait', 'Carte sélectionnée', esc(c.name), body, btn('cancel', 'Désélectionner', 'btn btn-ghost'));
+}
+
+function reactionHTML(pend) {
+    const p = myPlayer();
+    const canParry = state.parryCards.length > 0;
+    const body = `<div class="inspect">${bigCard(pend.weapon)}
+        <div><p><b>${esc(pend.attacker)}</b> vous attaque avec ${esc(pend.weapon.name)}.</p>
+        <p class="statline">Dégâts potentiels <b>${pend.damage.total}</b> · PV ${p.life} → ${Math.max(0, p.life - pend.damage.total)}</p>${calcParts(pend.damage.parts)}</div></div>
+        <p>${canParry ? 'Sélectionnez une carte pour parer (cartes éclairées), puis confirmez.' : 'Vous n\'avez aucune parade utilisable.'}</p>`;
+    const actions = `${state.picks.length ? btn('parry', 'Parer avec la carte sélectionnée', 'btn btn-primary', busy ? 'disabled' : '') : ''}${btn('takeHit', `Ne pas parer (−${pend.damage.total} PV)`, 'btn btn-ghost', busy ? 'disabled' : '')}`;
+    return box('react', 'Réaction requise · hors tour', 'Vous êtes attaqué·e !', body, actions);
+}
+
+function previewHTML() {
+    const c = state.hand[state.sel];
+    const t = state.targets[ui.target];
+    const diff = t.difficulty;
+    const target = state.players[ui.target];
+    const body = `<div class="preview">
+        <div><h3>Difficulté ${diff.ignored ? '—' : diff.total} <small>(précision ${c.precision})</small></h3>${diff.ignored ? '<p>Kojirō ignore la difficulté.</p>' : calcParts(diff.parts)}</div>
+        <div><h3>Dégâts potentiels ${t.damage.total}</h3>${calcParts(t.damage.parts)}</div></div>
+        <p class="note">Dégâts potentiels : ${esc(ui.target)} peut encore se défendre (${target.life} PV → ${Math.max(0, target.life - t.damage.total)} PV sans parade).</p>`;
+    return box('turn', 'Confirmer l\'attaque', `${esc(c.name)} → ${esc(ui.target)}`, body,
+        `${btn('confirmAttack', 'Confirmer l\'attaque', 'btn btn-primary', busy ? 'disabled' : '')}${btn('changeTarget', 'Changer de cible', 'btn btn-ghost')}`);
 }
 
 function gamePrompt(v) {
     const g = state.game;
     const active = state.players[g.active];
+    const pend = g.pending;
     if (v.ended) {
         return box('wait', 'Fin de partie', 'Partie terminée',
             `<p>${esc(g.ended_reason || '')} Les rôles sont maintenant révélés.</p>`, v.isHost ? btn('endGame', 'Retour au lobby', 'btn btn-primary') : '');
+    }
+    if (pend) {
+        if (pend.target === me) return reactionHTML(pend);
+        if (pend.attacker === me) {
+            return box('wait', 'En attente', `En attente de la réponse de ${esc(pend.target)}…`,
+                `<p>${esc(pend.weapon.name)} a été annoncée. ${esc(pend.target)} peut parer ou subir l'attaque.</p>`);
+        }
+        return box('wait', 'Attaque en cours', `${esc(pend.attacker)} attaque ${esc(pend.target)}`,
+            `<p>Arme : ${esc(pend.weapon.name)} · dégâts potentiels ${pend.damage.total}. En attente de la réponse de ${esc(pend.target)}.</p>`);
     }
     if (v.spectator) {
         return box('wait', 'Spectateur', `Tour de ${esc(g.active)}`, '<p>Vous observez la partie. Vous ne voyez ni les mains ni les rôles cachés, et ne pouvez pas agir.</p>');
@@ -278,13 +369,19 @@ function gamePrompt(v) {
             `<p>Vous ne pouvez pas terminer votre tour avec plus de 7 cartes en main. Sélectionnez les cartes à défausser.</p><p class="counter" aria-live="polite"><b>${state.picks.length} / ${need}</b> cartes sélectionnées</p>`,
             btn('discard', 'Valider la défausse', 'btn btn-primary', state.picks.length === need && !busy ? '' : 'disabled'));
     }
+    if (v.myTurn && state.sel !== null && state.targets) {
+        if (ui.target) return previewHTML();
+        return box('turn', 'Choisissez une cible', `${esc(state.hand[state.sel].name)} — qui visez-vous ?`,
+            '<p>Les joueurs marqués ◎ sont à portée. Touchez un joueur marqué ⊘ pour connaître la raison.</p>', btn('cancel', 'Annuler', 'btn btn-ghost'));
+    }
     if (state.sel !== null && state.hand[state.sel]) return inspectorHTML();
     if (v.myTurn) {
+        const lim = state.limit;
         return box('turn', 'À vous de jouer', 'Phase de jeu',
-            '<p>Consultez vos cartes en les sélectionnant, puis terminez votre tour. La récupération et la pioche ont été résolues automatiquement.</p>');
+            `<p>Sélectionnez une carte de votre main, ou terminez votre tour. Vous pouvez ne rien jouer.</p>${lim ? `<details class="why"><summary>Armes jouables ce tour : <b>${g.played} / ${lim.total}</b></summary>${calcParts(lim.parts)}</details>` : ''}`);
     }
     return box('wait', 'En attente', `Tour de ${esc(g.active)}${active && active.role ? ' (Shogun)' : ''}`,
-        '<p>Vous pouvez consulter le plateau et votre main.</p>');
+        '<p>Vous pouvez consulter le plateau et votre main. Si vous êtes attaqué, une fenêtre de réaction s\'affichera ici.</p>');
 }
 
 function dockHTML(v) {
@@ -294,9 +391,22 @@ function dockHTML(v) {
     const p = myPlayer();
     const g = state.game;
     const discarding = v.myTurn && g.phase === 'discard';
+    const reacting = Boolean(g.pending) && g.pending.target === me;
     const need = p.hand_count - 7;
-    const hand = state.hand.map((c, i) => cardHTML(c, i, { selected: !discarding && state.sel === i, pick: discarding && state.picks.includes(i) })).join('');
-    const canEnd = v.myTurn && g.phase === 'play' && !busy;
+    const hand = state.hand.map((c, i) => {
+        const o = {};
+        if (discarding) o.pick = state.picks.includes(i);
+        else if (reacting) {
+            o.react = state.parryCards.includes(i);
+            o.off = !o.react;
+            o.pick = state.picks.includes(i);
+        } else {
+            o.selected = state.sel === i;
+            o.off = Boolean(state.plays[i]) && !state.plays[i].ok;
+        }
+        return cardHTML(c, i, o);
+    }).join('');
+    const canEnd = v.myTurn && g.phase === 'play' && !g.pending && !busy;
     const roleName = state.role ? state.role.name : 'inconnu';
     return `<section class="dock${p.down ? ' is-down' : ''}${v.myTurn ? ' is-mine' : ''}" data-seat="${esc(me)}" aria-label="Votre zone de jeu">
         <div class="me">
@@ -369,7 +479,7 @@ function sideHTML(v) {
             <details><summary>PV ou honneur ?</summary><p>Les PV (cœurs ♥ rouges) sont votre santé. L'honneur (sceaux dorés 誉) détermine la victoire.</p></details>
             <details><summary>Qui est observateur ?</summary><p>Tout joueur connecté qui n'est pas dans la partie. Il ne voit jamais les rôles cachés ni les mains.</p></details></div>`;
     } else if (v.started) {
-        body = `<ol class="log" aria-label="Journal des événements">${state.log.map(l => `<li class="l-${l.kind}"><span class="lk">${{ info: 'Info', action: 'Action', important: 'Important' }[l.kind]}</span>${esc(l.text)}</li>`).join('') || '<li class="muted">Aucun événement.</li>'}</ol>`;
+        body = `<ol class="log" aria-label="Journal des événements">${(state.game.log || []).slice().reverse().map(l => `<li class="l-${l.kind}"><span class="lk">${{ info: 'Info', action: 'Action', important: 'Important' }[l.kind]}</span>${esc(l.text)}</li>`).join('') || '<li class="muted">Aucun événement.</li>'}</ol>`;
     } else {
         const spectators = state.connected.filter(n => !state.players[n]).sort((a, b) => a.localeCompare(b));
         body = `<h3>Joueurs <span class="badge">${v.count}</span></h3><ul class="plist">${v.list.map(p => `<li><span class="dot${isOnline(p.name) ? '' : ' off'}"></span><span class="pname">${esc(p.name)}</span>
@@ -434,7 +544,14 @@ const REASONS = {
     NOT_READY: 'Tous les joueurs doivent être prêts.',
     NOT_YOUR_TURN: 'Ce n\'est pas votre tour.',
     WRONG_PHASE: 'Action impossible dans cette phase.',
-    INVALID_DISCARD: 'Sélection de défausse invalide.'
+    INVALID_DISCARD: 'Sélection de défausse invalide.',
+    ATTACK_PENDING: 'Une attaque est en cours de résolution.',
+    NO_ATTACK: 'Aucune attaque ne vous cible.',
+    NOT_TARGET: 'Cette attaque ne vous cible pas.',
+    NOT_PLAYABLE: 'Cette carte n\'est pas jouable maintenant.',
+    INVALID_TARGET: 'Cible invalide : la situation a changé (joueur à terre ou hors de portée).',
+    INVALID_PARRY: 'Cette carte ne peut pas servir de parade.',
+    CARD_NOT_FOUND: 'Carte introuvable : votre main a changé.'
 };
 
 async function call(path, options, failure) {
@@ -474,12 +591,37 @@ const ACTIONS = {
     debugGame: d => runAction(() => call(`/debug/game?players=3&start=${d.start}`, { method: 'POST' }, 'Mode debug indisponible.')),
     debugBot: () => post('/debug/bot', 'Impossible d\'ajouter un bot.'),
     debugReset: () => runAction(() => call('/debug/game', { method: 'DELETE' }, 'Mode debug indisponible.')),
-    seat: d => { ui.sheet = d.name; render(); },
+    seat: d => {
+        if (state.targets && state.sel !== null) {
+            const t = state.targets[d.name];
+            if (!t) return;
+            if (!t.ok) return showToast(t.reason, 'warning');
+            ui.target = d.name;
+            return render();
+        }
+        ui.sheet = d.name;
+        render();
+    },
     sheetClose: () => { ui.sheet = null; render(); },
     noop: () => {},
     tab: d => { ui.tab = d.t; render(); },
     toggleSide: () => { ui.sideOpen = !ui.sideOpen; render(); },
-    cancel: () => { state.sel = null; render(); },
+    cancel: () => { clearSelection(); render(); },
+    changeTarget: () => { ui.target = null; render(); },
+    confirmAttack: () => {
+        const body = { card: state.sel, target: ui.target };
+        clearSelection();
+        return post('/game/play', 'Attaque impossible.', body);
+    },
+    parry: () => {
+        const body = { parry: true, card: state.picks[0] };
+        state.picks = [];
+        return post('/game/respond', 'Parade impossible.', body);
+    },
+    takeHit: () => {
+        state.picks = [];
+        return post('/game/respond', 'Réponse impossible.', { parry: false, card: 0 });
+    },
     logout,
     role: () => {
         ui.roleShown = !ui.roleShown;
@@ -487,17 +629,31 @@ const ACTIONS = {
         if (ui.roleShown) roleTimer = setTimeout(() => { ui.roleShown = false; render(); }, 5000);
         render();
     },
-    card: d => {
+    card: async d => {
         const i = +d.i;
+        const g = state.game;
         const v = view();
-        if (v.myTurn && state.game.phase === 'discard') {
+        if (v.myTurn && g.phase === 'discard') {
             const need = myPlayer().hand_count - 7;
             const k = state.picks.indexOf(i);
             if (k >= 0) state.picks.splice(k, 1);
             else if (state.picks.length < need) state.picks.push(i);
             else showToast(`Vous ne devez défausser que ${plural(need, 'carte', 'cartes')}.`, 'warning');
+        } else if (g.pending) {
+            if (g.pending.target !== me) return;
+            if (state.parryCards.includes(i)) state.picks = state.picks[0] === i ? [] : [i];
+            else showToast('Cette carte ne peut pas servir de parade.', 'warning');
+        } else if (state.sel === i) {
+            clearSelection();
         } else {
-            state.sel = state.sel === i ? null : i;
+            clearSelection();
+            state.sel = i;
+            const play = state.plays[i];
+            if (v.myTurn && play && play.ok && state.hand[i].category === 'arme') {
+                const { ok, data } = await apiFetch(`/game/targets?card=${i}`);
+                if (ok && state.sel === i) state.targets = Object.fromEntries(data.targets.map(t => [t.name, t]));
+                else if (!ok) showToast(REASONS[data.code] || data.error || 'Cibles indisponibles.', 'error');
+            }
         }
         render();
     }
@@ -513,7 +669,7 @@ document.addEventListener('click', e => {
 document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
         if (ui.sheet) { ui.sheet = null; return render(); }
-        if (state.sel !== null) { state.sel = null; return render(); }
+        if (state.sel !== null) { clearSelection(); return render(); }
     }
     if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[role="button"][data-a]')) {
         e.preventDefault();
@@ -533,6 +689,12 @@ function handleGameUpdate(message) {
     applyState(data);
     const g = state.game;
 
+    if (g && g.pending && ['attack', 'bot_action'].includes(data.event)) {
+        drawBeam(g.pending.attacker, g.pending.target);
+        if (g.pending.target === me) showToast(`${g.pending.attacker} vous attaque avec ${g.pending.weapon.name} !`, 'warning');
+    }
+    if (g && g.state === 'STARTED' && g.active === me && previousActive !== me) showToast('C\'est à vous de jouer.', 'success');
+
     switch (data.event) {
         case 'player_joined':
             if (byOther && !isBot(actor)) showToast(`${actor} a rejoint le lobby.`, 'info');
@@ -541,23 +703,12 @@ function handleGameUpdate(message) {
             if (byOther) showToast(`${actor} a quitté le lobby.`, 'warning');
             break;
         case 'game_started':
-            state.log = [];
-            logEvent('important', `La partie commence. ${g ? g.active : ''} (Shogun) joue en premier.`);
             showToast('La partie commence !', 'success');
-            break;
-        case 'turn_changed':
-            if (g && g.state === 'STARTED') {
-                if (g.active !== previousActive) logEvent('info', `${actor} termine son tour. Tour de ${g.active}.`);
-                else logEvent('info', `${actor} doit défausser avant de terminer son tour.`);
-                if (g.active === me && previousActive !== me) showToast('C\'est à vous de jouer.', 'success');
-            }
             break;
         case 'game_ended':
             showToast('La partie est terminée.', 'info');
             break;
     }
-    if (g && g.state === 'ENDED') logEvent('important', `Partie terminée : ${g.ended_reason}`);
-
     if (state.host === me && previousHost && previousHost !== me) {
         showToast('Vous êtes maintenant l\'hôte du lobby.', 'info');
     }
