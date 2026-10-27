@@ -7,7 +7,8 @@ const state = {
     minPlayers: 3,
     maxPlayers: 7,
     connected: [],
-    hand: []
+    hand: [],
+    role: null
 };
 
 let handKey = '';
@@ -86,6 +87,7 @@ function syncHand() {
 
     if (!key) {
         state.hand = [];
+        state.role = null;
         render();
         return;
     }
@@ -93,12 +95,13 @@ function syncHand() {
 }
 
 async function refreshHand() {
-    const { ok, data } = await apiFetch('/game/hand');
+    const { ok, data } = await apiFetch('/game/me');
     if (!ok) {
         handKey = '';
         return;
     }
     state.hand = data.hand || [];
+    state.role = data.role || null;
     renderMyZone();
 }
 
@@ -239,6 +242,7 @@ function render() {
 // ---------- Plateau de jeu ----------
 
 const CARD_BACK = 'dos_katana';
+const ROLE_BACK = 'dos_role';
 const CARD_FILES = { ju_jitsu: 'Carte Jujitsu _ Projection de Tortue' };
 
 function cardUrl(file) {
@@ -289,14 +293,23 @@ function characterNode(character) {
     return node;
 }
 
+function roleNode(role) {
+    const node = el('div', 'card card-role');
+    node.title = role ? role.name : 'Rôle inconnu';
+    node.appendChild(cardImage(role ? role.id : ROLE_BACK, role ? role.name : 'Rôle'));
+    return node;
+}
+
 function opponentNode(player) {
     const root = el('article', 'opponent');
+    root.classList.toggle('is-shogun', Boolean(player.role));
     root.append(characterNode(player.character));
 
     const info = el('div', 'opponent-info');
     const head = el('div', 'opponent-head');
     head.append(el('span', 'opponent-name', player.name));
     if (player.name === state.host) head.append(el('span', 'crown-inline', '♛'));
+    if (player.role) head.append(el('span', 'tag tag-shogun', 'Shogun'));
     info.append(
         head,
         el('div', 'opponent-char', player.character ? player.character.name : ''),
@@ -322,9 +335,19 @@ function renderMyZone() {
     $('mineCharacter').replaceChildren(characterNode(mine.character));
     $('mineName').textContent = mine.character ? `${me} — ${mine.character.name}` : me;
     $('mineLife').replaceChildren(lifeNode(mine.life, mine.max_life));
+    $('mineRole').replaceChildren(roleNode(state.role));
+    if (state.role) {
+        $('mineRole').append(el('span', 'role-name', state.role.name));
+    }
     fillCards($('minePermanents'), mine.permanents || [], 'Aucun');
     fillCards($('mineHand'), state.hand, 'Main vide');
     $('handCount').textContent = state.hand.length;
+}
+
+function renderShogunSlot(players) {
+    const shogun = players.find(p => p.role);
+    $('shogunCard').replaceChildren(roleNode(shogun ? shogun.role : null));
+    $('shogunName').textContent = shogun ? (shogun.name === me ? `${shogun.name} (vous)` : shogun.name) : '';
 }
 
 function renderGame() {
@@ -332,6 +355,7 @@ function renderGame() {
     const myIndex = players.findIndex(p => p.name === me);
     const opponents = players.slice(myIndex + 1).concat(players.slice(0, myIndex));
     $('opponents').replaceChildren(...opponents.map(opponentNode));
+    renderShogunSlot(players);
 
     const g = state.game;
     $('deckCount').textContent = g.deck_count;
